@@ -47,7 +47,7 @@ export default function BetaPage(): React.ReactElement {
     <main className="flex min-h-screen flex-col items-center bg-cream px-4 py-10 text-center text-ink sm:py-14">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/brand/rangla-logo.png"
+        src="/brand/maaji-logo.png"
         alt="Rangla Punjab Restaurant"
         width={112}
         height={112}

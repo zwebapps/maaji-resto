@@ -149,10 +149,7 @@ describe("Restaurant + Menu JSON-LD", () => {
     );
     expect(node.servesCuisine).toEqual(["Indisch", "Pakistanisch"]);
     expect(node.priceRange).toBe("€€");
-    expect(node.sameAs).toEqual([
-      "https://www.instagram.com/ranglapunjab20232023/",
-      "https://www.google.com/maps/place/?q=place_id:PLACE1",
-    ]);
+    expect(node.sameAs).toEqual(["https://www.google.com/maps/place/?q=place_id:PLACE1"]);
     expect(node.acceptsReservations).toBe(true);
     expect((node.hasMenu as { url?: string }).url).toBe("https://example.com/de");
   });

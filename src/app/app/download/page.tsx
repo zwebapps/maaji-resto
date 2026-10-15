@@ -98,7 +98,7 @@ export default async function AppDownloadPage(): Promise<React.ReactElement> {
     <main className="flex min-h-screen flex-col items-center justify-center bg-cream px-6 py-12 text-center text-ink">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/brand/rangla-logo.png"
+        src="/brand/maaji-logo.png"
         alt={identity?.name ?? ""}
         width={160}
         height={160}

@@ -8,10 +8,8 @@ import {
   StyleSheet,
   Text,
   View,
-  useWindowDimensions,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { VenueWordmark } from "../venue-wordmark";
 import { useI18n } from "../i18n";
 import { GOOGLE_NATIVE, useAuth } from "../auth";
 import { GoogleButton } from "../google-button";
@@ -88,16 +86,7 @@ export function WelcomeScreen({
   const loading = variant === "loading";
   // "Rangla Punjab Restaurant" over "Konstanz" — one `venues.name` with
   // the " · " separator in it, set as a letterhead (see `venue-name.ts`).
-  const { line1, line2 } = venueNameLines(displayVenueName());
-  /** The mark's measure: the window less a margin of its own — narrower
-   *  than the page's text so the lockup has air either side, as it does
-   *  on the posters, and 32 pt narrower again since the owner asked for
-   *  the top line 5 pt smaller (2026-09-22; the mark is fitted to THIS,
-   *  so its width is what sets the lettering's size). Capped at 390 so a
-   *  tablet gets a letterhead rather than a shop sign. Live across
-   *  rotations, because this screen scrolls and does not lock to
-   *  portrait. */
-  const nameWidth = Math.min(390, Math.max(160, useWindowDimensions().width - 88));
+  const { line2 } = venueNameLines(displayVenueName());
 
   // One tap to an account, right on the launch screen — native Google
   // where the build supports it, the browser device flow otherwise.
@@ -134,22 +123,10 @@ export function WelcomeScreen({
             light surface (the header, the Account hero) keeps the
             generated one. */}
         <Image source={LOGO_CUTOUT} style={styles.logo} resizeMode="contain" />
-        {/* The venue's own LOCKUP — "RANGLA PUNJAB" over a smaller
-            "RESTAURANT", in the lime sticker lettering, exactly as the
-            owner's posters set it (see `venue-wordmark.tsx`, whose
-            proportions are measured off those posters).
-
-            It is set past any phone's measure and fitted to it by the
-            mark's own `maxWidth`, which scales the whole thing — glyphs,
-            strokes, tracking and the artwork's condensed width together,
-            so it spans the page on every phone — rather
-            than relying on `adjustsFontSizeToFit`, which web does not
-            implement at all and Android honours unevenly.
-
-            The measure is the window less the scrim's 32 pt gutters, plus
-            the 16 pt either side that `nameBlock` claws back. */}
+        {/* The cut-out above IS the lockup (mark + MAAJI + tagline), so no
+            separate wordmark is set here; only a place line, if the venue
+            name carries one. */}
         <View style={styles.nameBlock}>
-          <VenueWordmark name={line1} size={64} maxWidth={nameWidth} />
           {line2 ? (
             <Text style={styles.brandPlace} numberOfLines={1}>
               {line2}
@@ -167,12 +144,7 @@ export function WelcomeScreen({
           />
           <View style={styles.featureDivider} />
           <Feature
-            // The one green icon in the row, at the owner's word: the same
-            // `colors.halal` the corner mark wears, so "fresh" and "halal"
-            // read as one promise rather than two unrelated colours. Its
-            // LABEL stays cream like the other three, so the strip still
-            // scans as a set and the colour is never the only signal.
-            icon={<Ionicons name="leaf-outline" size={24} color={colors.halal} />}
+            icon={<Ionicons name="leaf-outline" size={24} color={colors.onRed} />}
             label={t.featFresh}
           />
           <View style={styles.featureDivider} />

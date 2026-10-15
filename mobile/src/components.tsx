@@ -19,7 +19,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors, fonts, isRTL, money, radius, statusTones } from "./theme";
 import { HalalMark } from "./halal-mark";
 import { CartoonTitle } from "./cartoon-title";
-import { VenueWordmark } from "./venue-wordmark";
 import { ALLERGEN_ICONS, DIET_ICONS, fill, localeTag, useI18n } from "./i18n";
 import { useBell } from "./bell";
 import { useBumpOnChange, useGiftWiggle, usePressScale, usePulse } from "./motion";
@@ -169,8 +168,6 @@ export function BrandHeader({
 }): React.ReactElement {
   const { t } = useI18n();
   const bell = useBell();
-  /** The middle slot's measured width — what the name is fitted to. */
-  const [center, setCenter] = React.useState(0);
   return (
     <View style={styles.headerWrap}>
       <View style={styles.header}>
@@ -203,30 +200,18 @@ export function BrandHeader({
             <Image source={LOGO_CUTOUT} style={styles.headerLogo} resizeMode="contain" />
           )}
         </View>
-        <View style={styles.headerCenter} onLayout={(e) => setCenter(e.nativeEvent.layout.width)}>
-          {/* The venue's name as the poster LOCKUP — "RANGLA PUNJAB" over
-              a smaller "RESTAURANT" — the same mark the launch screen
-              sets (owner, 2026-09-22).
-
-              It is fitted to the MEASURED middle slot rather than to a
-              guess: this bar's centre is what is left after two 44 pt
-              side slots, two 8 pt gaps and the 16 pt insets, and the
-              points pill widens its slot to 110. `CartoonTitle` scales
-              the whole lettering to whatever that leaves, so a long name
-              shrinks instead of being clipped — `adjustsFontSizeToFit`
-              can't help here, an SVG has no such affordance. Until the
-              first layout the cap is the narrowest case, so the name is
-              never drawn too wide and then snapped back. */}
+        <View style={styles.headerCenter}>
+          {/* The venue's name as the house wordmark — gold serif capitals,
+              as the Maaji brand board sets "MAAJI" over the teal bar. */}
           {sticker ? (
-            <VenueWordmark
-              name={title}
-              // Past any phone's middle slot on purpose: `maxWidth` does
-              // the sizing, so the mark always spans the room the two
-              // rails leave it instead of sitting at a fixed size with
-              // air either side (owner, 2026-09-22 — "stretch the name").
-              size={60}
-              maxWidth={Math.min(center > 0 ? center : HEADER_TITLE_MIN, HEADER_TITLE_MAX)}
-            />
+            <Text
+              style={styles.headerWordmark}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+            >
+              {title.toUpperCase()}
+            </Text>
           ) : (
             <Text
               style={styles.headerTitle}
@@ -905,21 +890,6 @@ const POINTS_BADGE = 52;
 /** How far the badge sits below the mascot's baseline — see
  *  `headerEndCentred`. The bar is 98 pt tall and the badge ends at 85. */
 const POINTS_DROP = 4;
-/** What the name is fitted to before the first layout: the narrowest
- *  middle slot there is (a 360 pt phone, less the 16 pt insets, the two
- *  56 pt rails and the two 8 pt gaps). Never wider than the real one, so
- *  the lettering only ever grows into place, never jumps back. */
-const HEADER_TITLE_MIN = 200;
-/**
- * …and the widest it may get. The lockup is 4.66 times as wide as it is
- * tall, so its width IS the bar's height: uncapped, a 430 pt phone would
- * give the mark 294 pt and a 73 pt box while a 360 pt one gave it 58,
- * and `HEADER_CONTENT_HEIGHT` is a single number for every device. 260
- * is the widest that still fits that number — and since 2026-09-24 the
- * cap IS 260 (it was 225): the owner wanted the mark bigger, level with
- * the POINTS badge beside it.
- */
-const HEADER_TITLE_MAX = 260;
 
 const styles = StyleSheet.create({
   /** The asterisk on a required field, and the line that explains it.
@@ -1121,6 +1091,14 @@ const styles = StyleSheet.create({
    * longer ones. `lineHeight` is stated so the fixed bar height stays
    * arithmetic rather than a guess about each platform's ascenders.
    */
+  headerWordmark: {
+    color: colors.goldSoft,
+    fontSize: 19,
+    lineHeight: 26,
+    letterSpacing: 0.5,
+    textAlign: "center",
+    ...fonts.arabicDisplay,
+  },
   headerTitle: {
     color: colors.onRed,
     fontSize: 17,

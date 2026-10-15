@@ -16,7 +16,7 @@
  */
 import sharp from "sharp";
 
-const SRC = "public/brand/rangla-logo.png";
+const SRC = "public/brand/maaji-logo.png";
 const DEST = "mobile/assets/logo-cutout.png";
 
 const { data, info } = await sharp(SRC).ensureAlpha().raw().toBuffer({ resolveWithObject: true });

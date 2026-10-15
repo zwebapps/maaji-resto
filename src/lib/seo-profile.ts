@@ -29,8 +29,6 @@ export function seoProfile(env: Record<string, string | undefined> = process.env
   return {
     cuisine: list(env.SEO_CUISINE, ["Indisch", "Pakistanisch"]),
     priceRange: (env.SEO_PRICE_RANGE ?? "€€").trim() || null,
-    sameAs: list(env.SEO_SAME_AS, ["https://www.instagram.com/ranglapunjab20232023/"]).filter((u) =>
-      /^https:\/\//.test(u),
-    ),
+    sameAs: list(env.SEO_SAME_AS, []).filter((u) => /^https:\/\//.test(u)),
   };
 }

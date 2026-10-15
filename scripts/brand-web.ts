@@ -1,9 +1,9 @@
 /**
  * Derives every brand PNG the WEB serves from the two 1024² masters.
  *
- *   public/brand/rangla-logo.png                  → the venue mark (logo-*),
+ *   public/brand/maaji-logo.png                  → the venue mark (logo-*),
  *                                                   the favicon + apple-touch icon
- *   public/brand/rangla-punjab-mobile-app-icon.*  → the launcher art (icon-*)
+ *   public/brand/maaji-mobile-app-icon.png  → the launcher art (icon-*)
  *
  * The mobile app's own assets are NOT our business — `scripts/brand-mobile.ts`
  * owns `mobile/assets/*`. This script only writes into `public/`.
@@ -43,8 +43,8 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 
-const LOGO_MASTER = "public/brand/rangla-logo.png";
-const ICON_MASTER = "public/brand/rangla-punjab-mobile-app-icon.jpeg";
+const LOGO_MASTER = "public/brand/maaji-logo.png";
+const ICON_MASTER = "public/brand/maaji-mobile-app-icon.png";
 
 /** How much of the artwork's content box the favicon crop keeps, from the top. */
 const HEAD_FRACTION = 0.6;
@@ -82,8 +82,8 @@ const OUTPUTS: Output[] = [
   // apple-touch-icon (src/app/layout.tsx, src/lib/menu-images.ts) + the 512
   // sibling kept beside it for parity with the manifest pair. Both show the
   // logo: this is the icon a guest ends up with on their home screen.
-  { file: "public/rangla-icon-180.png", master: LOGO_MASTER, size: 180 },
-  { file: "public/rangla-icon-512.png", master: LOGO_MASTER, size: 512 },
+  { file: "public/brand-icon-180.png", master: LOGO_MASTER, size: 180 },
+  { file: "public/brand-icon-512.png", master: LOGO_MASTER, size: 512 },
 ];
 
 /** A critical-path icon over this is a regression worth failing on. */

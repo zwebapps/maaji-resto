@@ -7,19 +7,16 @@ describe("venueIcons", () => {
   // brand set exactly like one without.
   it("serves the brand icon set even when the venue has uploaded a logo", () => {
     const icons = venueIcons("tenant123/uploads/abc");
-    expect(icons.icon.map((i) => i.url)).toEqual(["/favicon.ico?v=4", "/rangla-icon-180.png?v=4"]);
-    expect(icons.apple[0]?.url).toBe("/rangla-icon-180.png?v=4");
+    expect(icons.icon.map((i) => i.url)).toEqual(["/favicon.ico?v=4", "/brand-icon-180.png?v=4"]);
+    expect(icons.apple[0]?.url).toBe("/brand-icon-180.png?v=4");
     expect(icons.icon.some((i) => i.url.startsWith("/img/"))).toBe(false);
   });
 
   it("serves the same brand icon set without a logo", () => {
     for (const empty of [null, undefined, ""] as const) {
       const icons = venueIcons(empty);
-      expect(icons.icon.map((i) => i.url)).toEqual([
-        "/favicon.ico?v=4",
-        "/rangla-icon-180.png?v=4",
-      ]);
-      expect(icons.apple[0]?.url).toBe("/rangla-icon-180.png?v=4");
+      expect(icons.icon.map((i) => i.url)).toEqual(["/favicon.ico?v=4", "/brand-icon-180.png?v=4"]);
+      expect(icons.apple[0]?.url).toBe("/brand-icon-180.png?v=4");
     }
   });
 

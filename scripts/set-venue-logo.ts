@@ -49,7 +49,7 @@ function usage(): string {
     "pnpm exec tsx --env-file=.env scripts/set-venue-logo.ts <venue-slug> <image path>",
     "",
     "  e.g. pnpm exec tsx --env-file=.env scripts/set-venue-logo.ts \\",
-    "         rangla-punjab public/brand/rangla-logo.png",
+    "         maaji-restaurant public/brand/maaji-logo.png",
     "",
     "Equivalent to uploading the file in Dashboard → Settings → Logo.",
   ].join("\n");

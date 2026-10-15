@@ -86,9 +86,9 @@ export const BRAND_ICONS: {
 } = {
   icon: [
     { url: "/favicon.ico?v=4", sizes: "16x16 32x32 48x48" },
-    { url: "/rangla-icon-180.png?v=4", sizes: "180x180", type: "image/png" },
+    { url: "/brand-icon-180.png?v=4", sizes: "180x180", type: "image/png" },
   ],
-  apple: [{ url: "/rangla-icon-180.png?v=4", sizes: "180x180", type: "image/png" }],
+  apple: [{ url: "/brand-icon-180.png?v=4", sizes: "180x180", type: "image/png" }],
 };
 
 /**

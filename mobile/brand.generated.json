@@ -1,29 +1,29 @@
 {
   "$generated": "pnpm brand:mobile — generated file, do not edit by hand",
   "venue": {
-    "name": "Rangla Punjab Restaurant · Konstanz",
-    "slug": "rangla-punjab",
-    "themeId": "rangla-royal",
-    "logoKey": "cmt4bi0850000kusbfsqelvlj/uploads/b2fa8f99-0913-4360-a8a0-508805c2cb9d",
-    "bannerKey": "cmt4bi0850000kusbfsqelvlj/uploads/4dcc09d0-24d7-41b2-886f-d789ef2ab6dd",
-    "backdropId": "ivory-minaret",
-    "halal": true
+    "name": "Maaji Restaurant",
+    "slug": "maaji-restaurant",
+    "themeId": "maaji-emerald",
+    "logoKey": "cmv94s39z00009dsbfyqs60wp/uploads/a61b7b68-f79a-484b-85d3-dbd6dc7f0b44",
+    "bannerKey": null,
+    "backdropId": "none",
+    "halal": false
   },
   "colors": {
-    "red": "#8f1a1a",
-    "redDark": "#701414",
-    "cream": "#fdf4e0",
-    "creamCard": "#fef9ee",
-    "gold": "#8b6914",
-    "goldSoft": "#e8c15c",
-    "ink": "#360a0a",
-    "inkSoft": "#7a5d5d",
-    "line": "#e1d3c2",
-    "onRed": "#fdf3dd",
-    "positive": "#397e4c",
+    "red": "#0f4a47",
+    "redDark": "#0c3a37",
+    "cream": "#fdf7e9",
+    "creamCard": "#f3ede0",
+    "gold": "#8a6619",
+    "goldSoft": "#e0b458",
+    "ink": "#061c1b",
+    "inkSoft": "#5b6969",
+    "line": "#dad8cc",
+    "onRed": "#fdf6e6",
+    "positive": "#1d6b5a",
     "danger": "#a4231b"
   },
-  "scrim": "rgba(112, 20, 20, 0.78)",
+  "scrim": "rgba(12, 58, 55, 0.42)",
   "assets": {
     "icon": "./assets/generated/icon.png",
     "hero": "./assets/generated/hero.jpg",
@@ -35,24 +35,24 @@
     "logo": "./assets/generated/logo.png"
   },
   "expo": {
-    "name": "Rangla Punjab Restaurant",
-    "slug": "rangla-punjab",
-    "scheme": "ranglapunjab",
-    "version": "1.1.18",
+    "name": "Maaji",
+    "slug": "maaji-restaurant",
+    "scheme": "maajirestaurant",
+    "version": "1.0.0",
     "icon": "./assets/generated/icon.png",
-    "backgroundColor": "#8f1a1a",
+    "backgroundColor": "#0f4a47",
     "splash": {
       "image": "./assets/generated/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#8f1a1a"
+      "backgroundColor": "#0f4a47"
     },
     "ios": {
-      "bundleIdentifier": "de.ranglapunjabrestaurant.app"
+      "bundleIdentifier": "de.maajirestaurant.app"
     },
     "android": {
-      "package": "de.ranglapunjabrestaurant.app",
+      "package": "de.maajirestaurant.app",
       "adaptiveIcon": {
-        "backgroundColor": "#8f1a1a",
+        "backgroundColor": "#0f4a47",
         "foregroundImage": "./assets/generated/adaptive-foreground.png",
         "backgroundImage": "./assets/generated/adaptive-background.png"
       }
@@ -62,9 +62,9 @@
     },
     "extra": {
       "brand": {
-        "venueSlug": "rangla-punjab",
-        "venueName": "Rangla Punjab",
-        "themeId": "rangla-royal"
+        "venueSlug": "maaji-restaurant",
+        "venueName": "Maaji",
+        "themeId": "maaji-emerald"
       }
     }
   }

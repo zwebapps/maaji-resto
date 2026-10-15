@@ -13,7 +13,7 @@ let logoDataUrlCache: string | null | undefined;
 async function brandLogoDataUrl(): Promise<string | undefined> {
   if (logoDataUrlCache !== undefined) return logoDataUrlCache ?? undefined;
   try {
-    const png = await readFile(join(process.cwd(), "public/brand/rangla-logo.png"));
+    const png = await readFile(join(process.cwd(), "public/brand/maaji-logo.png"));
     logoDataUrlCache = `data:image/png;base64,${png.toString("base64")}`;
   } catch {
     logoDataUrlCache = null;
