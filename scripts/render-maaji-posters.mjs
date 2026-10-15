@@ -207,12 +207,65 @@ const POSTERS = {
   },
 };
 
+/**
+ * The default gift-card pictures (DEFAULT_GIFT_CARD_PRODUCTS in
+ * src/lib/gift-card-service.ts → public/brand/gift-cards/*.png, 1024 × 646).
+ * No price or name on the art: both are owner-editable, so the picture must
+ * never be able to disagree with them. Tier shows as 1 / 2 / 3 gold diamonds.
+ */
+const GIFT_CARDS = [
+  ["kleine-freude", 1],
+  ["genussabend", 2],
+  ["festmahl", 3],
+];
+
+function giftCard(logo, tier) {
+  const GW = 1024;
+  const GH = 646;
+  const diamonds = Array.from({ length: tier }, (_, i) => {
+    const cx = 390 + (i - (tier - 1) / 2) * 46;
+    return `<rect x="${cx - 11}" y="${GH - 92}" width="22" height="22" transform="rotate(45 ${cx} ${GH - 81})" fill="${C.gold}"/>`;
+  }).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${GW}" height="${GH}" viewBox="0 0 ${GW} ${GH}">
+  <defs>
+    <radialGradient id="ground" cx="50%" cy="40%" r="80%">
+      <stop offset="0%" stop-color="${C.tealLift}"/>
+      <stop offset="60%" stop-color="${C.teal}"/>
+      <stop offset="100%" stop-color="${C.tealDeep}"/>
+    </radialGradient>
+    <pattern id="jali" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M24 2 L46 24 L24 46 L2 24 Z" fill="none" stroke="${C.gold}" stroke-width="1"/>
+      <circle cx="24" cy="24" r="6" fill="none" stroke="${C.gold}" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="${GW}" height="${GH}" fill="url(#ground)"/>
+  <rect width="${GW}" height="${GH}" fill="url(#jali)" opacity="0.07"/>
+  <rect x="18" y="18" width="${GW - 36}" height="${GH - 36}" rx="34" fill="none" stroke="${C.gold}" stroke-width="5"/>
+  <rect x="32" y="32" width="${GW - 64}" height="${GH - 64}" rx="26" fill="none" stroke="${C.gold}" stroke-width="1.5" opacity="0.6"/>
+  <rect x="${GW - 230}" y="18" width="44" height="${GH - 36}" fill="${C.gold}" opacity="0.9"/>
+  <ellipse cx="${GW - 245}" cy="96" rx="46" ry="24" transform="rotate(-20 ${GW - 245} 96)" fill="none" stroke="${C.goldDeep}" stroke-width="13"/>
+  <ellipse cx="${GW - 171}" cy="96" rx="46" ry="24" transform="rotate(20 ${GW - 171} 96)" fill="none" stroke="${C.goldDeep}" stroke-width="13"/>
+  <circle cx="${GW - 208}" cy="104" r="19" fill="${C.goldDeep}"/>
+  <image href="${logo}" x="170" y="60" width="440" height="440"/>
+  ${diamonds}
+</svg>`;
+}
+
 async function main() {
   const only = process.argv[2];
   const logo = await dataUri("mobile/assets/logo-cutout.png", 600);
   const dishes = await Promise.all(
     [1, 2, 3, 4, 5].map((i) => dataUri(`public/dish_${i}.png`, 360)),
   );
+  for (const [name, tier] of GIFT_CARDS) {
+    if (only && only !== "gift-cards") continue;
+    const out = path.join(ROOT, "public/brand/gift-cards", `${name}.png`);
+    await sharp(Buffer.from(giftCard(logo, tier)))
+      .png({ palette: true, quality: 85, effort: 10, compressionLevel: 9 })
+      .toFile(out);
+    process.stdout.write(`${name.padEnd(14)} → ${path.relative(ROOT, out)}\n`);
+  }
+  if (only === "gift-cards") return;
   for (const [name, render] of Object.entries(POSTERS)) {
     if (only && only !== name) continue;
     const svg = await render({ logo, dishes });

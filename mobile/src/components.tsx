@@ -919,13 +919,14 @@ const styles = StyleSheet.create({
     }),
   },
   /** The Offers tile's halo (`GlowRing` on the Home screen) for a host on
-   *  the RED header, in the wordmark's lime (owner, 2026-10-01): a steady
-   *  lime edge, and a lighter one whose halo is kept tight so it reads as
+   *  the brand header, in the brand gold (was the Rangla lime): a steady
+   *  gold edge, and a lighter one whose halo is kept tight so it reads as
    *  an edge, not a lamp. `boxShadow` takes a colour on both platforms. */
-  ringLime: { borderColor: "#A9E01C" },
+  ringLime: { borderColor: colors.goldSoft },
   ringEmberHalo: {
-    borderColor: "#E8FA4B",
-    boxShadow: "0px 0px 10px 3px rgba(200, 245, 60, 0.9)",
+    borderColor: colors.goldSoft,
+    // The brand gold at 90% (`E6`), so the glow follows the venue's palette.
+    boxShadow: `0px 0px 10px 3px ${colors.goldSoft}E6`,
   },
   /** Room for the eye, and a 44 pt target pinned to the field's end. */
   passwordInput: { paddingEnd: 44, marginBottom: 0 },
@@ -1030,14 +1031,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.creamCard,
     borderRadius: 14,
     borderWidth: 2,
-    borderColor: "#A9E01C",
+    borderColor: colors.goldSoft,
     shadowColor: "#000",
     shadowOpacity: 0.22,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
     elevation: 4,
   },
-  /** The pulsing ring, drawn ON the badge's own lime edge. */
+  /** The pulsing ring, drawn ON the badge's own gold edge. */
   headerPointsRing: { borderRadius: 14 },
   /** The gift: 22 pt, a line height of its own so the emoji's font box
    *  doesn't push the word below the square. */

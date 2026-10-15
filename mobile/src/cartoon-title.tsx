@@ -2,6 +2,7 @@ import React, { useCallback, useRef, useState } from "react";
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import Svg, { Defs, LinearGradient, Stop, Text as SvgText } from "react-native-svg";
 import { useI18n } from "./i18n";
+import { colors } from "./theme";
 
 /**
  * The owner's "sticker" lettering — the lime, black-outlined, white-rimmed
@@ -11,19 +12,23 @@ import { useI18n } from "./i18n";
  *
  * React Native cannot stroke text, so it is drawn as SVG in three passes
  * on the same baseline: a wide white stroke (the rim), a narrower black
- * one (the outline), then the lime fill on top. The SVG needs a width up
+ * one (the outline), then the brand-gold fill on top. The SVG needs a width up
  * front, so an invisible copy of the text in the same font measures it
  * first; until then the box is empty rather than wrongly sized.
  *
  * Luckiest Guy has no Arabic letters, so in Arabic this falls back to
- * plain bold text in the same lime — legible, never tofu.
+ * plain bold text in the same gold — legible, never tofu.
  */
 export const CARTOON_FONT = "LuckiestGuy_400Regular";
 
-/** The lime the fill fades between, and the flat one the Arabic fallback
- *  wears (a gradient needs glyph outlines this fallback doesn't draw). */
-const LIME_TOP = "#F0FF4D";
-const LIME = "#A8E000";
+/** The fill fades from the brand's light ground into its accent gold, and
+ *  the flat gold is what the Arabic fallback wears (a gradient needs glyph
+ *  outlines this fallback doesn't draw). Read from the generated brand
+ *  palette, so the lettering follows the venue rather than one house lime. */
+const FILL_TOP = colors.cream;
+const FILL = colors.goldSoft;
+/** The outline under the fill: the brand's deep chrome colour. */
+const OUTLINE = colors.redDark;
 
 /** Stroke widths, the pad they need around the box, and the spare room
  *  Android's wider SVG metrics ask for — all as functions of the drawn
@@ -164,13 +169,13 @@ export function CartoonTitle({
         <Svg width={box} height={height}>
           <Defs>
             <LinearGradient id="lime" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={LIME_TOP} />
-              <Stop offset="1" stopColor={LIME} />
+              <Stop offset="0" stopColor={FILL_TOP} />
+              <Stop offset="1" stopColor={FILL} />
             </LinearGradient>
           </Defs>
           {[
             { stroke: "#FFFFFF", strokeWidth: rim, fill: "#FFFFFF" },
-            { stroke: "#141414", strokeWidth: outline, fill: "#141414" },
+            { stroke: OUTLINE, strokeWidth: outline, fill: OUTLINE },
             { stroke: "none", strokeWidth: 0, fill: "url(#lime)" },
           ].map((layer, i) => (
             <SvgText
@@ -205,7 +210,7 @@ const styles = StyleSheet.create({
    *  the answer at the room's own width. */
   ruler: { alignSelf: "flex-start", maxWidth: RULER_ROOM, flexShrink: 0 },
   fallback: {
-    color: LIME,
+    color: FILL,
     fontWeight: "800",
     textShadowColor: "rgba(0,0,0,0.6)",
     textShadowRadius: 2,
