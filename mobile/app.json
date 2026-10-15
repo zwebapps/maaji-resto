@@ -1,0 +1,60 @@
+{
+  "expo": {
+    "orientation": "default",
+    "userInterfaceStyle": "light",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "usesAppleSignIn": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "appleTeamId": "NFHFDX372C",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Rangla Punjab Restaurant does not use your location. Delivery addresses are typed in by you."
+      }
+    },
+    "android": {
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "sounds": ["./assets/sounds/new_order.wav"]
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Rangla Punjab Restaurant does not record audio. The app only plays a short sound when a new order arrives.",
+          "recordAudioAndroid": false,
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app uses your photos so you can attach a picture when you report a problem with an order.",
+          "cameraPermission": "The app uses the camera so you can photograph a problem with your order instead of describing it."
+        }
+      ],
+      "expo-apple-authentication"
+    ],
+    "extra": {
+      "brand": {
+        "venueSlug": "rangla-punjab",
+        "venueName": "Rangla Punjab",
+        "themeId": "rangla-royal"
+      },
+      "eas": {
+        "projectId": "dd669a2b-f955-43a5-bfce-a5d77106b00b"
+      }
+    },
+    "owner": "zahoor1989"
+  }
+}

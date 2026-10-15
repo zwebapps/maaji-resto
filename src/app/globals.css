@@ -1,0 +1,301 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+ * Guesto theme — "Modern Mughal Luxury".
+ * Palette pulled pixel-for-pixel from elvorai_theme.png:
+ *   espresso near-black surfaces · warm cream sections · burnt-orange primary
+ *   · antique-gold secondary. No green anywhere except the WhatsApp fab.
+ * Exposed via Tailwind 4 `@theme` so components use `bg-espresso`,
+ * `text-orange`, `font-script`, etc. instead of leaking hex codes.
+ * ------------------------------------------------------------------------- */
+:root {
+  --background: #f5eee1;
+  --foreground: #2a1a0e;
+
+  /* ---- Theme palette (raw values) ---------------------------------------
+   * Every Tailwind color token below reads one of these `--rp-*` variables
+   * via var(), so a whole app re-skin is just a set of `--rp-*` overrides in
+   * a `:root[data-theme="..."]` block (see the Reztro block after @theme).
+   * Default = "Rangla Punjab" (Modern Mughal Luxury). The admin chrome vars
+   * (`--rp-admin-*`) drive the dark operator console. */
+  --rp-espresso: #1c130b;
+  --rp-espresso-2: #241811;
+  --rp-espresso-line: #3a2716;
+  --rp-cream: #f5eee1;
+  --rp-cream-2: #efe4d1;
+  --rp-card: #fffdf8;
+  --rp-orange: #c25a22;
+  --rp-orange-dark: #a94a17;
+  --rp-gold: #b68f52;
+  --rp-gold-dark: #96733a;
+  --rp-star: #d69a3a;
+  --rp-ink: #2a1a0e;
+  --rp-muted: #5f5142; /* darkened for AA body contrast on cream */
+  --rp-onwarm: #ecdcb6;
+  --rp-onwarm-soft: #c9b58c;
+
+  /* Admin (operator console) chrome */
+  --rp-admin-bg: #0f1115;
+  --rp-admin-surface: #181b22;
+  --rp-admin-line: #ffffff1a; /* white/10 */
+  --rp-admin-text: #e5e5e5; /* neutral-200 */
+  --rp-admin-muted: #a3a3a3; /* neutral-400 */
+  --rp-admin-accent: #fcd34d; /* amber-300 */
+  --rp-admin-accent-ink: #171717; /* text on the accent */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  /* Dark surfaces (nav, hero, footer, dark bands) */
+  --color-espresso: var(--rp-espresso);
+  --color-espresso-2: var(--rp-espresso-2);
+  --color-espresso-line: var(--rp-espresso-line);
+
+  /* Cream surfaces */
+  --color-cream: var(--rp-cream);
+  --color-cream-2: var(--rp-cream-2);
+  --color-card: var(--rp-card);
+
+  /* Accents */
+  --color-orange: var(--rp-orange);
+  --color-orange-dark: var(--rp-orange-dark);
+  --color-gold: var(--rp-gold);
+  --color-gold-dark: var(--rp-gold-dark);
+  --color-star: var(--rp-star);
+
+  /* Text */
+  --color-ink: var(--rp-ink); /* headings on cream */
+  --color-muted: var(--rp-muted); /* body on cream */
+  --color-onwarm: var(--rp-onwarm); /* text on espresso */
+  --color-onwarm-soft: var(--rp-onwarm-soft); /* muted text on espresso */
+
+  /* Admin console chrome — use bg-admin-bg / text-admin-text / … */
+  --color-admin-bg: var(--rp-admin-bg);
+  --color-admin-surface: var(--rp-admin-surface);
+  --color-admin-line: var(--rp-admin-line);
+  --color-admin-text: var(--rp-admin-text);
+  --color-admin-muted: var(--rp-admin-muted);
+  --color-admin-accent: var(--rp-admin-accent);
+  --color-admin-accent-ink: var(--rp-admin-accent-ink);
+
+  /* `brand-*` aliases — dashboard + public-menu components were written
+     against these names before the palette landed in this file. Keep them
+     pointing at the raw vars above; never add a NEW brand-* name. */
+  --color-brand-espresso: var(--rp-espresso);
+  --color-brand-espresso-soft: var(--rp-espresso-2);
+  --color-brand-espresso-line: var(--rp-espresso-line);
+  --color-brand-warm-cream: var(--rp-onwarm);
+  --color-brand-warm-cream-soft: var(--rp-onwarm-soft);
+  --color-brand-gold: var(--rp-gold);
+  --color-brand-cream: var(--rp-cream);
+  --color-brand-green: var(--rp-ink); /* legacy name; maps to ink */
+
+  --font-sans: var(--font-geist-sans);
+  --font-serif: var(--font-cormorant);
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+}
+
+/* ===========================================================================
+ * Theme variant: "Reztro" (clean light dashboard).
+ * PLACEHOLDER palette — swap these values for the exact tokens read from the
+ * Figma file (node 425:18477) once the Dev Mode MCP is enabled. Activated by
+ * the operator on /admin/settings, which sets data-theme="reztro" on <html>;
+ * every token above re-resolves, so all three surfaces re-skin at once.
+ * ======================================================================== */
+:root[data-theme="reztro"] {
+  --rp-cream: #f4f6f8; /* page background */
+  --rp-cream-2: #e9edf1;
+  --rp-card: #ffffff;
+  --rp-espresso: #141922; /* dark decorative panels (login hero, etc.) */
+  --rp-espresso-2: #1b212c;
+  --rp-espresso-line: #2a3341;
+  --rp-orange: #12b76a; /* primary accent (Reztro fresh green) */
+  --rp-orange-dark: #0e9355;
+  --rp-gold: #f59e0b; /* secondary accent */
+  --rp-gold-dark: #d97706;
+  --rp-star: #f59e0b;
+  --rp-ink: #111827; /* headings */
+  --rp-muted: #6b7280; /* body */
+  --rp-onwarm: #e5e7eb; /* text on dark panels */
+  --rp-onwarm-soft: #9ca3af;
+
+  /* Admin console: lighter Reztro shell */
+  --rp-admin-bg: #111827;
+  --rp-admin-surface: #1b2431;
+  --rp-admin-line: #ffffff14;
+  --rp-admin-text: #e5e7eb;
+  --rp-admin-muted: #9ca3af;
+  --rp-admin-accent: #12b76a;
+  --rp-admin-accent-ink: #06281a;
+}
+
+/* Kitchen display: a new order blinks a full-screen edge glow ~4× over 2s
+ * (2 Hz — under the WCAG 3-flash/sec threshold), alongside the chime, so a
+ * cook who glances up catches it. */
+/* New-order blink: pulse a glowing amber ring on just the arriving ticket
+ * (via box-shadow so nothing shifts). 4 × 500ms ≈ 2s, then it clears. */
+@keyframes kds-card-flash {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0);
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px rgba(251, 191, 36, 0.95),
+      0 0 26px 6px rgba(251, 191, 36, 0.55);
+  }
+}
+.kds-card-flash {
+  animation: kds-card-flash 500ms ease-in-out 4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kds-card-flash {
+    animation: none;
+    box-shadow:
+      0 0 0 4px rgba(251, 191, 36, 0.9),
+      0 0 26px 6px rgba(251, 191, 36, 0.5);
+  }
+}
+
+html {
+  /* Reserve the scrollbar's space permanently. Modals (allergen dialog,
+     cart drawer) lock body scroll with `overflow: hidden` on open, which
+     otherwise removes the scrollbar and reflows/re-centers the whole page
+     — the "shake" / one-side shrink the moment the popup appears. With a
+     stable gutter the layout never moves. */
+  scrollbar-gutter: stable;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    var(--font-sans),
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  font-feature-settings: "ss01", "cv11";
+  /* Softer, crisper rendering everywhere. */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---------------------------------------------------------------------------
+ * Console readability — applied to the dashboard + admin work surfaces.
+ * The consoles were written against text-sm/text-xs (14/12px), which reads
+ * small and harsh at desk distance; this bumps the whole scale one gentle
+ * notch and relaxes line-height WITHOUT touching the guest pages (scoped by
+ * class, and the guest menu never mounts .console-readable).
+ * ------------------------------------------------------------------------ */
+.console-readable {
+  font-size: 1rem;
+  line-height: 1.6;
+}
+.console-readable .text-sm {
+  font-size: 0.9375rem; /* 15px, was 14 */
+  line-height: 1.55;
+}
+.console-readable .text-xs {
+  font-size: 0.8125rem; /* 13px, was 12 */
+  line-height: 1.5;
+}
+
+/* Tablets clipped to the counter (and the phone the owner checks orders
+ * on) do not get the desktop bump: restaurant tablets are 8–11", usually
+ * mounted an arm's length away, and the larger type cost a third of the
+ * order list. Back to the framework sizes below 1024 px. */
+@media (max-width: 1023px) {
+  .console-readable {
+    font-size: 0.9375rem;
+    line-height: 1.5;
+  }
+  .console-readable .text-sm {
+    font-size: 0.875rem;
+    line-height: 1.45;
+  }
+  .console-readable .text-xs {
+    font-size: 0.75rem;
+  }
+}
+.console-readable .text-\[11px\],
+.console-readable .text-\[10px\] {
+  font-size: 0.75rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Guest-menu motion — CSS only, so the public page ships no extra JS.
+     Everything inside this block vanishes for reduced-motion users. */
+
+  /* Dish cards rise softly as they scroll into view. The inline script
+     at the end of the menu marks below-fold cards (.pre-reveal) and swaps
+     in .in-view as they enter the viewport; each card then plays a *timed*
+     ease-out rise — smooth regardless of scroll speed, unlike a
+     scroll-scrubbed timeline. Fail-open: without JS neither class ever
+     appears and every card is simply visible.
+
+     `.pre-reveal` deliberately has NO styles. It used to set opacity: 0 to
+     hide a card until its reveal faded it in — but menu-rise is transform
+     only now, so nothing needs hiding, and an opacity-0 card is a card axe
+     reads as invisible text: it measured contrast on fully transparent ink
+     and reported 1.07:1 against the page ground, failing the a11y gate on
+     roughly four runs in five. The class stays as the marker the script
+     toggles; the rise alone is the effect. */
+  .dish-card.in-view {
+    animation: menu-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* Floating order bar pops in when the first item is added. */
+  .menu-pop {
+    animation: menu-pop 0.35s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  }
+
+  /* Order drawer slides up like a bottom sheet. */
+  .menu-sheet {
+    animation: menu-sheet-up 0.42s cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+
+  /* One-time entrance for the venue header on page load. */
+  .menu-hero {
+    animation: menu-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+/* Transform only — deliberately NOT opacity. Dish cards and the venue
+   header play this on entry, and axe snapshots the page while it is still
+   running: a half-faded #ecdcb6 heading composites to #877a63 and reports
+   4.22:1 against the card, failing the WCAG AA gate on a design that
+   actually passes at rest. The same trap was already hit and documented for
+   `menu-slide-up` in menu-view.tsx, which rises 12px for exactly this
+   reason; `menu-rise` simply never got the same treatment. An 18px rise
+   keeps the arrival without ever putting mid-opacity text on screen. */
+@keyframes menu-rise {
+  from {
+    transform: translateY(18px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes menu-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.92);
+  }
+}
+
+@keyframes menu-sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(48px);
+  }
+}

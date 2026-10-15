@@ -1,0 +1,47 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "rangla-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev", "-p", "58816"],
+      "port": 58816,
+      "autoPort": false
+    },
+    {
+      "name": "rangla-mobile",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "mobile", "run", "web", "--", "--port", "8082"],
+      "port": 8082
+    },
+    {
+      "name": "fastapi-ai-chat",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/zahoor/Downloads/Work/TuringCollege/fastapi-ai-chat",
+        "run",
+        "dev"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "rangla-mobile-local",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "EXPO_PUBLIC_API_URL=http://localhost:58816 npm --prefix mobile run web -- --port 8083"
+      ],
+      "port": 8083
+    },
+    {
+      "name": "rangla-mobile-sim",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd mobile && EXPO_PUBLIC_API_URL=http://localhost:58816 npx expo start --port 8084 --clear"
+      ],
+      "port": 8084
+    }
+  ]
+}

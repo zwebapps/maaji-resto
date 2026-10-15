@@ -1,0 +1,314 @@
+import { orderEta, type EtaDefaults } from "./order-eta";
+import { orderLabel } from "./order-label";
+import { issueRefByOrder, type IssueRef, type IssueStatus } from "./issue-service";
+import { getKitchenOrder, listRecentOrders, type KitchenOrder } from "./order-service";
+import { ORDER_STATUSES, TERMINAL_STATUSES, canTransition } from "./order-status";
+import { parseOrderingConfig, type OrderingConfig } from "./ordering-config";
+import { can, getAccess } from "./team-access";
+import { asUser, resolveActiveTenantId } from "./tenant";
+
+/**
+ * The orders board the restaurant sees inside the guest app.
+ *
+ * Everything here is a projection of what the dashboard already reads —
+ * same service functions, same RLS-scoped queries — reshaped into wire
+ * types (ISO strings, integer cents, a precomputed `allowedNext`) so the
+ * React Native side never has to reimplement `order-status.ts` to know
+ * which buttons to draw.
+ */
+
+export interface StaffOrderItem {
+  name: string;
+  quantity: number;
+  priceCents: number;
+}
+
+export interface StaffOrderAddress {
+  street: string | null;
+  zip: string | null;
+  city: string | null;
+  note: string | null;
+}
+
+export interface StaffOrder {
+  /** "B-12" / "O-7" (or the plain number on an older order) — what the app shows. */
+  orderLabel: string;
+  id: string;
+  orderNumber: number;
+  /** "B" (cash) / "O" (online); null on older orders. */
+  orderSeries?: string | null;
+  status: string;
+  /** Every status this order may legally move to, in lifecycle order.
+   *  Empty on a finished order. The client renders one button per entry
+   *  rather than deriving the chain itself. */
+  allowedNext: string[];
+  orderType: string;
+  tableNumber: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  deliveryAddress: StaffOrderAddress | null;
+  requestedFor: string | null;
+  createdAt: string;
+  updatedAt: string;
+  paymentStatus: string;
+  paymentProvider: string | null;
+  totalCents: number;
+  discountCents: number;
+  /** Order-wide discount: percent and cents off the food (0 = none). */
+  orderDiscountPercent: number;
+  orderDiscountCents: number;
+  /** Points the reward cost the guest. 0 = no reward (or an order placed
+   *  before the column existed): the board then draws the line without
+   *  the points rather than claiming it cost nothing. */
+  discountPoints: number;
+  /** Cents a gift card paid on this order (0 = none), and the last four
+   *  characters of its code. The board draws them as their own line under
+   *  the reward — one order can carry both. */
+  giftCardDiscountCents: number;
+  giftCardLast4: string | null;
+  /** When a delivery order left the kitchen, so the board can say
+   *  "on the way since 19:42". ISO; null when never dispatched. */
+  outForDeliveryAt: string | null;
+  /**
+   * The promised time of an ASAP delivery / pickup order; null for
+   * planned and dine-in orders. `adjustableUntil` is set only while the
+   * restaurant may still choose the minutes and accept — the app draws
+   * the − / + and its countdown from it, and falls back to the plain
+   * "prepare" button once it is null.
+   */
+  eta: {
+    minutes: number;
+    expectedAt: string;
+    accepted: boolean;
+    adjustableUntil: string | null;
+  } | null;
+  currency: string;
+  items: StaffOrderItem[];
+  /** The complaint thread on this order, if there is one (P7-10). The
+   *  board draws a pill from it, and deliberately keeps drawing it after
+   *  the order reaches `done` — a complaint outlives the cooking. */
+  issueStatus: IssueStatus | null;
+  /** That thread's id, so a card can open it without first asking which
+   *  thread belongs to this order. Null exactly when `issueStatus` is. */
+  issueId: string | null;
+}
+
+/** The stored address is a sparse JSON blob; the wire shape always
+ *  carries all four keys so the app can render them unconditionally. */
+function toAddress(address: KitchenOrder["deliveryAddress"]): StaffOrderAddress | null {
+  if (!address) return null;
+  return {
+    street: address.street ?? null,
+    zip: address.zip ?? null,
+    city: address.city ?? null,
+    note: address.note ?? null,
+  };
+}
+
+/**
+ * May this person cancel orders from the app? The owner always may; a team
+ * member only with the "Cancel orders" box ticked (owner, 2026-10-07 —
+ * replaced the venue-wide `ordering.appCancelEnabled` switch, which kept
+ * the button away from the owner too). Callers that need it more than once
+ * (the status endpoint reads the order twice) resolve it ONCE and pass it.
+ */
+export async function staffMayCancel(userId: string): Promise<boolean> {
+  return can(await getAccess(userId), "cancel");
+}
+
+/** The venue's ordering settings, for callers outside this module that need
+ *  the expected-time defaults (the printed tickets). */
+export async function getOrderingConfigForUser(userId: string): Promise<OrderingConfig> {
+  return boardConfig(userId);
+}
+
+/** The venue's ordering settings the board needs: the expected-time
+ *  defaults. One RLS-scoped read. */
+async function boardConfig(userId: string): Promise<OrderingConfig> {
+  return asUser(userId, async (tx) => {
+    const venue = await tx.venue.findFirst({
+      where: { deletedAt: null },
+      select: { ordering: true },
+    });
+    return parseOrderingConfig(venue?.ordering);
+  });
+}
+
+/**
+ * `appCancelEnabled` defaults to FALSE here on purpose: a caller that
+ * forgets to resolve the switch hands the app a board with no cancel
+ * button, which is the safe failure — never an accidental cancel.
+ */
+export function toStaffOrder(
+  order: KitchenOrder,
+  issue: IssueRef | null = null,
+  appCancelEnabled = false,
+  etaDefaults?: Partial<EtaDefaults>,
+): StaffOrder {
+  const eta = orderEta(order, etaDefaults);
+  return {
+    eta: eta
+      ? {
+          minutes: eta.minutes,
+          expectedAt: eta.expectedAt.toISOString(),
+          accepted: eta.accepted,
+          adjustableUntil: eta.adjustableUntil?.toISOString() ?? null,
+        }
+      : null,
+    issueStatus: issue ? issue.status : null,
+    issueId: issue ? issue.id : null,
+    id: order.id,
+    orderNumber: order.orderNumber,
+    orderLabel: orderLabel(order),
+    status: order.status,
+    // The cancel permission is subtracted from the lifecycle, not added to
+    // it: "cancelled" only reaches the app for someone who may cancel.
+    // The endpoint enforces the same rule, so this is what the app DRAWS,
+    // never what the server TRUSTS.
+    allowedNext: ORDER_STATUSES.filter(
+      (to) =>
+        (appCancelEnabled || to !== "cancelled") &&
+        canTransition(order.status, to, order.orderType),
+    ),
+    orderType: order.orderType,
+    tableNumber: order.tableNumber,
+    customerName: order.customerName,
+    customerPhone: order.customerPhone,
+    deliveryAddress: toAddress(order.deliveryAddress),
+    requestedFor: order.requestedFor ? order.requestedFor.toISOString() : null,
+    createdAt: order.createdAt.toISOString(),
+    updatedAt: order.updatedAt.toISOString(),
+    paymentStatus: order.paymentStatus,
+    paymentProvider: order.paymentProvider,
+    totalCents: order.totalCents,
+    discountCents: order.discountCents,
+    orderDiscountPercent: order.orderDiscountPercent ?? 0,
+    orderDiscountCents: order.orderDiscountCents ?? 0,
+    discountPoints: order.discountPoints,
+    giftCardDiscountCents: order.giftCardDiscountCents,
+    giftCardLast4: order.giftCardLast4,
+    outForDeliveryAt: order.outForDeliveryAt?.toISOString() ?? null,
+    currency: order.currency,
+    items: order.items.map((i) => ({
+      name: i.name,
+      quantity: i.quantity,
+      priceCents: i.priceCents,
+    })),
+  };
+}
+
+/** How much history the board carries behind the live orders. */
+const CLOSED_LIMIT = 50;
+
+/**
+ * The board's payload: every open order, plus the 50 most recently
+ * placed finished ones so the day's history is scrollable. The two are
+ * fetched separately on purpose — a busy service must never let closed
+ * orders push a live one out of the window.
+ *
+ * `since` turns the call into a polling delta: only rows written at or
+ * after that instant come back.
+ */
+export async function listStaffOrders(userId: string, since?: Date): Promise<StaffOrder[]> {
+  const open = await listRecentOrders(userId, 100, { scope: "open", updatedSince: since });
+  const closed = await listRecentOrders(userId, CLOSED_LIMIT, {
+    scope: "closed",
+    updatedSince: since,
+  });
+  const orders = [...open, ...closed].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  // ONE query for the whole board rather than one per card: complaints
+  // are rare, so almost every id in here will come back empty — which is
+  // exactly the shape a per-card lookup would waste a round trip on.
+  const tenantId = await resolveActiveTenantId(userId);
+  const issues = tenantId
+    ? await issueRefByOrder(
+        tenantId,
+        orders.map((o) => o.id),
+      )
+    : new Map<string, IssueRef>();
+
+  // One read for the whole board, same reason as the issues map above.
+  const config = await boardConfig(userId);
+  const cancelOk = await staffMayCancel(userId);
+
+  return orders.map((order) => toStaffOrder(order, issues.get(order.id) ?? null, cancelOk, config));
+}
+
+/**
+ * One order, reshaped — what the status endpoint answers with.
+ *
+ * `appCancelEnabled` (= "may this person cancel") may be passed in by a
+ * caller that already resolved it (the status endpoint reads the order
+ * before and after the move); left out, it is looked up from the person's
+ * team boxes, so no caller can accidentally ship a cancel button.
+ */
+export async function getStaffOrder(
+  userId: string,
+  orderId: string,
+  appCancelEnabled?: boolean,
+): Promise<StaffOrder | null> {
+  const order = await getKitchenOrder(userId, orderId);
+  if (!order) return null;
+  const tenantId = await resolveActiveTenantId(userId);
+  const issues = tenantId ? await issueRefByOrder(tenantId, [order.id]) : null;
+  const config = await boardConfig(userId);
+  const cancelOk = appCancelEnabled ?? (await staffMayCancel(userId));
+  return toStaffOrder(order, issues?.get(order.id) ?? null, cancelOk, config);
+}
+
+export interface StaffSummary {
+  /** Orders the kitchen still owes work on. */
+  openOrders: number;
+  /** Online payments started but not settled — money to chase. */
+  unpaidOnline: number;
+  /** Reservations still awaiting a confirm/decline. */
+  pendingReservations: number;
+  /** Catering enquiries still awaiting an answer, for events today or later. */
+  pendingCatering: number;
+  /** Complaint threads the restaurant still owes an answer or a close
+   *  on — everything that is not `resolved` (P7-10). */
+  openIssues: number;
+}
+
+export async function getStaffSummary(userId: string): Promise<StaffSummary> {
+  return asUser(userId, async (tx) => {
+    // Sequential, not Promise.all: these share one interactive-transaction
+    // connection, and serialising them keeps that explicit.
+    // "Still owes work" — a cancelled order owes none, so it drops out of
+    // the badge exactly like a finished one.
+    // An online order still awaiting its payment owes the kitchen nothing
+    // yet — it is not on the board, so it is not in the badge either.
+    const openOrders = await tx.order.count({
+      where: {
+        status: { notIn: [...TERMINAL_STATUSES] },
+        paymentStatus: { notIn: ["pending", "failed"] },
+      },
+    });
+    const unpaidOnline = await tx.order.count({
+      where: {
+        paymentStatus: { in: ["pending", "failed"] },
+        status: { notIn: [...TERMINAL_STATUSES] },
+      },
+    });
+    // Same window as the Reservations list (`listReservations`): a request
+    // whose time has long passed is no longer something to answer, and
+    // counting it would keep the badge lit forever.
+    const pendingReservations = await tx.reservation.count({
+      where: {
+        deletedAt: null,
+        status: "requested",
+        at: { gte: new Date(Date.now() - 6 * 3_600_000) },
+      },
+    });
+    const openIssues = await tx.orderIssue.count({ where: { status: { not: "resolved" } } });
+    const pendingCatering = await tx.cateringRequest.count({
+      where: {
+        deletedAt: null,
+        status: "requested",
+        date: { gte: new Date().toISOString().slice(0, 10) },
+      },
+    });
+    return { openOrders, unpaidOnline, pendingReservations, openIssues, pendingCatering };
+  });
+}

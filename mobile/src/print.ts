@@ -1,0 +1,263 @@
+import { Platform } from "react-native";
+import * as Print from "expo-print";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { btPrint, btPrintingAvailable } from "../modules/bt-printer";
+import { fetchStaffTicketEscPos, fetchStaffTicketHtml } from "./staff";
+
+/**
+ * Kitchen tickets, printed from the phone or tablet on the pass.
+ *
+ * The app renders NOTHING: the server sends one self-contained HTML
+ * document per order and this module hands it to whatever print stack
+ * the platform has — AirPrint on iOS, the Android print framework on
+ * Android, the browser's own dialog on web. That is deliberate. A venue
+ * that wants a different ticket layout changes it server-side; no app
+ * release, no store review, and every device prints the same paper.
+ *
+ * Nothing here ever throws or blocks the board. A printer that is off,
+ * a network that dropped, an owner who tapped Cancel in the print sheet
+ * — each comes back as an outcome the caller can say one line about.
+ */
+
+export type PrintOutcome =
+  | "ok"
+  /** The owner dismissed the platform's print sheet. Not a failure, and
+   *  must not be reported as one. */
+  | "cancelled"
+  /** The staff session is gone — the caller signs restaurant mode out. */
+  | "unauthorized"
+  | "notfound"
+  | "network"
+  /** The document arrived but the platform refused to print it. */
+  | "failed";
+
+/**
+ * iOS rejects a dismissed print sheet rather than resolving, and Android
+ * does the same when the user backs out of the print preview. Neither is
+ * an error worth a red line on the board, so they are told apart from a
+ * real failure by the message the platform gives.
+ */
+function isCancellation(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /cancel|did not complete|dismiss/i.test(message);
+}
+
+/**
+ * Web has no `printAsync({ html })` worth the name: expo-print there
+ * prints the CURRENT page, which would put the owner's board on paper
+ * instead of the ticket. So the document goes into its own window, which
+ * prints itself once it has laid out and closes behind the dialog.
+ */
+function printInBrowser(html: string): PrintOutcome {
+  // A pop-up blocker is the normal failure here, and it is silent.
+  const win = window.open("", "_blank", "width=420,height=640");
+  if (!win) return "failed";
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  // NOT `win.onload`: for a document written synchronously into an
+  // about:blank window the load event may already have fired by the
+  // time the handler is attached, and the window would then sit there
+  // having printed nothing. A frame's delay after `close()` is enough
+  // for layout — the ticket is self-contained, so there are no external
+  // assets still in flight — and `onafterprint` tidies up where the
+  // browser supports it.
+  win.onafterprint = () => win.close();
+  setTimeout(() => {
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      // The operator closed the window before it printed. Nothing to
+      // recover, and nothing worth an error line for.
+    }
+  }, 250);
+  return "ok";
+}
+
+/* ------------------------------------------------------------------ *
+ * Bluetooth receipt printer (Android).
+ *
+ * The phone's own print dialog always needs a tap, so a new order can
+ * never print by itself through it. A receipt printer paired over
+ * Bluetooth is spoken to directly instead (`modules/bt-printer`): no
+ * dialog, and auto-print really is automatic (owner, 2026-10-09). The
+ * choice is this device's own, like the auto-print switch.
+ * ------------------------------------------------------------------ */
+
+const BT_PRINTER_KEY = "rangla-bt-printer";
+
+export interface BtPrinterChoice {
+  name: string;
+  address: string;
+  paper: 58 | 80;
+}
+
+export async function getBtPrinter(): Promise<BtPrinterChoice | null> {
+  try {
+    const raw = await AsyncStorage.getItem(BT_PRINTER_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as Partial<BtPrinterChoice>;
+    if (typeof p.address !== "string" || !p.address) return null;
+    return { name: p.name || p.address, address: p.address, paper: p.paper === 58 ? 58 : 80 };
+  } catch {
+    return null;
+  }
+}
+
+export async function setBtPrinter(choice: BtPrinterChoice | null): Promise<void> {
+  try {
+    if (choice) await AsyncStorage.setItem(BT_PRINTER_KEY, JSON.stringify(choice));
+    else await AsyncStorage.removeItem(BT_PRINTER_KEY);
+  } catch {
+    // Kept for this session by the caller's state.
+  }
+}
+
+/** A short test slip, built on the device — no order needed. Same code
+ *  page as the real tickets (PC858), with a € and umlauts on it, so the
+ *  test shows whether this printer prints them. */
+export function testSlipBase64(): string {
+  const text =
+    "\x1b@\x1c.\x1bt\x13\x1ba\x01\x1bE\x01Rangla Punjab\n\x1bE\x00Testdruck OK\n" +
+    "Euro: \xd5  Umlaute: \x84 \x94 \x81 \xe1\n" +
+    new Date().toLocaleString("de-DE") +
+    "\n\x1bd\x04\x1dVB\x00";
+  // Every char is a single byte (< 0x100), so btoa is safe.
+  return globalThis.btoa(text);
+}
+
+/** Send bytes to the chosen Bluetooth printer. */
+export async function printViaBluetooth(
+  printer: BtPrinterChoice,
+  base64: string,
+): Promise<PrintOutcome> {
+  const res = await btPrint(printer.address, base64);
+  return res.ok ? "ok" : "failed";
+}
+
+/** Fetch one order's ticket and put it in front of a printer — the paired
+ *  Bluetooth receipt printer when this device has one, else the phone's
+ *  print dialog. */
+export async function printTicket(staffToken: string, orderId: string): Promise<PrintOutcome> {
+  const printer = Platform.OS === "android" && btPrintingAvailable() ? await getBtPrinter() : null;
+  if (printer) {
+    const bytes = await fetchStaffTicketEscPos(staffToken, orderId, printer.paper);
+    if (!bytes.ok) {
+      if (bytes.error === "unauthorized") return "unauthorized";
+      if (bytes.error === "notfound") return "notfound";
+      if (bytes.error === "network") return "network";
+      return "failed";
+    }
+    return printViaBluetooth(printer, bytes.data);
+  }
+  const res = await fetchStaffTicketHtml(staffToken, orderId);
+  if (!res.ok) {
+    if (res.error === "unauthorized") return "unauthorized";
+    if (res.error === "notfound") return "notfound";
+    if (res.error === "network") return "network";
+    return "failed";
+  }
+  if (Platform.OS === "web") return printInBrowser(res.data);
+  try {
+    await Print.printAsync({ html: res.data });
+    return "ok";
+  } catch (error) {
+    return isCancellation(error) ? "cancelled" : "failed";
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Auto-print.
+ *
+ * "Every new order prints itself" is only useful if it means EXACTLY
+ * once. Two things would break that, and both are handled here rather
+ * than on the board:
+ *
+ *  - A restart. The board's new-order detection is per session (its
+ *    `seen` set starts empty), so without a persisted record a relaunch
+ *    mid-service would treat the whole open board as new and spool a
+ *    dozen duplicate tickets.
+ *  - Turning the switch ON during service. The orders already on the
+ *    board are not news; they are baselined instead of printed.
+ *
+ * The record is a capped ring of ids in AsyncStorage — small, and it
+ * survives exactly as long as it needs to.
+ * ------------------------------------------------------------------ */
+
+const ENABLED_KEY = "rangla-auto-print";
+const PRINTED_KEY = "rangla-auto-print-ids";
+/** Roughly a very busy day's tickets. Oldest fall off first. */
+const MAX_PRINTED = 200;
+
+/** Default OFF: a device must never start printing on its own because
+ *  someone signed in on it. */
+export async function isAutoPrintOn(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(ENABLED_KEY)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export async function setAutoPrintOn(on: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(ENABLED_KEY, on ? "1" : "0");
+  } catch {
+    // A device that cannot persist the switch still honours it for this
+    // session — the in-memory state is the board's, not ours.
+  }
+}
+
+async function readPrinted(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(PRINTED_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writePrinted(ids: readonly string[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(PRINTED_KEY, JSON.stringify(ids.slice(0, MAX_PRINTED)));
+  } catch {
+    // Storage full or unavailable: the worst case is one duplicate
+    // ticket after a restart, which is better than not printing.
+  }
+}
+
+/**
+ * Record ids as already dealt with WITHOUT printing them — what happens
+ * the first time the switch goes on, so the backlog on the board stays
+ * on the board.
+ */
+export async function baselinePrinted(ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const known = await readPrinted();
+  const seen = new Set(known);
+  const added = ids.filter((id) => !seen.has(id));
+  if (added.length === 0) return;
+  await writePrinted([...added, ...known]);
+}
+
+/**
+ * Claim the ids that have not been printed before, marking them printed
+ * in the same step.
+ *
+ * Marked BEFORE the paper comes out on purpose: a ticket that failed to
+ * print is a line on the board the owner can act on, whereas one that
+ * printed twice because the claim happened afterwards is two plates of
+ * the same food.
+ */
+export async function claimUnprinted(ids: readonly string[]): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const known = await readPrinted();
+  const seen = new Set(known);
+  const fresh = ids.filter((id) => !seen.has(id));
+  if (fresh.length === 0) return [];
+  await writePrinted([...fresh, ...known]);
+  return fresh;
+}

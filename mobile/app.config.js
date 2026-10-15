@@ -1,0 +1,278 @@
+/**
+ * Dynamic Expo config: `app.json` holds the venue-independent shape
+ * (orientation, plugins, tablet support), and this file merges the
+ * venue-derived half over it from `brand.generated.json`.
+ *
+ * Regenerate with `pnpm brand:mobile --venue <slug>` in the repo root — never
+ * hand-edit brand.generated.json. Everything brand-shaped (name, slug,
+ * scheme, store ids, icons, splash, colors) comes from that file, so pointing
+ * the app at a different restaurant is one command plus a rebuild.
+ *
+ * Expo passes the static config in as `config`; see
+ * https://docs.expo.dev/versions/v57.0.0/config/app/ and
+ * https://docs.expo.dev/workflow/configuration/.
+ */
+const fs = require("fs");
+const { execSync } = require("child_process");
+const path = require("path");
+
+let brand;
+try {
+  brand = require("./brand.generated.json");
+} catch {
+  throw new Error(
+    "mobile/brand.generated.json is missing — run `pnpm brand:mobile --venue <slug>` in the repo root first.",
+  );
+}
+
+/**
+ * Google's iOS SDK needs the "reversed client id" registered as a URL
+ * scheme. Accepts either form of EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID:
+ * `123-abc.apps.googleusercontent.com` or the already-reversed
+ * `com.googleusercontent.apps.123-abc`. Returns null when the var is
+ * unset or unrecognisable, so the config still evaluates in a checkout
+ * that has no Google credentials (the app falls back to the browser
+ * sign-in flow — see src/auth.tsx).
+ */
+function iosUrlScheme(clientId) {
+  if (!clientId) return null;
+  const id = String(clientId).trim();
+  if (id.startsWith("com.googleusercontent.apps.")) return id;
+  const suffix = ".apps.googleusercontent.com";
+  if (!id.endsWith(suffix)) return null;
+  return `com.googleusercontent.apps.${id.slice(0, -suffix.length)}`;
+}
+
+/**
+ * Apple Pay's merchant id, read at CONFIG time from the environment
+ * (`APPLE_MERCHANT_ID=merchant.de.ranglapunjabrestaurant.app`). It is ⛔
+ * human-gated: creating the merchant id and uploading the Stripe
+ * payment-processing certificate is an Apple Developer account job.
+ *
+ * Unset — the default, and what every build in this repo does today —
+ * means: no `com.apple.developer.in-app-payments` entitlement is written,
+ * `initPaymentSheet` is NOT given an `applePay` block, and the app's
+ * platform-pay button never renders on iOS. Setting it is the only thing
+ * that turns any of that on (plus a native rebuild: the entitlement is
+ * part of the binary).
+ */
+const appleMerchantId = (process.env.APPLE_MERCHANT_ID ?? "").trim() || null;
+
+/**
+ * The public site's host, for the driver-dispatch deep links.
+ *
+ * Taken from `EXPO_PUBLIC_API_URL` — the same variable `src/api.ts`
+ * builds every request against, so the app can only ever claim links for
+ * the origin it actually talks to. It is NOT read from
+ * `brand.generated.json`: that file is generated and must not be hand
+ * edited, and the host is a deployment fact rather than a brand one.
+ *
+ * Only an https origin yields a host. A local dev build pointing at
+ * `http://localhost:3000` or `http://10.0.2.2:3000` gets `null`, and
+ * then no intent filter and no associated domain are written at all —
+ * an app-link claim on `localhost` is nonsense, and an unverifiable
+ * claim is worse than none.
+ */
+function siteHost() {
+  const raw = (process.env.EXPO_PUBLIC_API_URL ?? "").trim();
+  if (!raw.startsWith("https://")) return null;
+  const host = raw.slice("https://".length).split("/")[0].split(":")[0];
+  return host && host.includes(".") ? host : null;
+}
+
+/**
+ * ⛔ iOS Universal Links for `/dispatch/*` — human-gated, and off by
+ * default.
+ *
+ * `ios.associatedDomains` writes the `com.apple.developer.associated-
+ * domains` entitlement into the binary, and an entitlement the
+ * provisioning profile does not carry makes the BUILD fail — including
+ * the free-provisioning "iPhone plugged into this Mac" recipe in
+ * BUILDS.md, which is how this project builds for iOS today. Issuing
+ * the capability needs the paid Apple Developer Program membership that
+ * BUILDS.md records as a human step.
+ *
+ * So this follows the same shape as APPLE_MERCHANT_ID above: unset (the
+ * default, and what every build in this repo does) writes no
+ * entitlement and iOS opens the dispatch link in Safari — a complete,
+ * working flow. Setting `APPLE_UNIVERSAL_LINKS=1` once the account and
+ * the `apple-app-site-association` file exist is the only thing that
+ * turns it on, plus a rebuild.
+ */
+const appleUniversalLinks = (process.env.APPLE_UNIVERSAL_LINKS ?? "").trim() === "1";
+
+/**
+ * The name under the app ICON (owner, 2026-09-24: "Rangla Punjab" must
+ * be fully readable once installed). The full venue name — "Rangla Punjab
+ * Restaurant" — is ~24 characters and a home screen shows about 12–14,
+ * so iOS printed "RanglaPunjabRe…". The short brand name is set as the
+ * launcher label on both platforms; the store listings, the in-app
+ * lockup and everything else keep the full name.
+ */
+function withHomeScreenName(config, name) {
+  const { withStringsXml, AndroidConfig } = require("expo/config-plugins");
+  return withStringsXml(config, (c) => {
+    c.modResults = AndroidConfig.Strings.setStringItem(
+      [AndroidConfig.Resources.buildResourceItem({ name: "app_name", value: name })],
+      c.modResults,
+    );
+    return c;
+  });
+}
+
+function gitShortCommit() {
+  try {
+    return execSync("git rev-parse --short HEAD", {
+      cwd: __dirname,
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return "";
+  }
+}
+
+module.exports = ({ config }) => {
+  const generated = brand.expo ?? {};
+  const homeScreenName =
+    { ...config.extra, ...generated.extra }.brand?.venueName?.trim() ||
+    generated.name ||
+    config.name;
+  const android = { ...config.android, ...generated.android };
+  // The generated adaptive icon replaces the static one wholesale — mixing a
+  // generated foreground with a stale monochrome layer would ship two
+  // different logos in one icon.
+  if (generated.android?.adaptiveIcon) android.adaptiveIcon = generated.android.adaptiveIcon;
+  // Firebase config for Android push (FCM). Downloaded from the Firebase
+  // console for this package id and dropped next to this file; until it is
+  // there the build still succeeds, the phone just never receives a push.
+  const googleServicesFile = path.join(__dirname, "google-services.json");
+  if (fs.existsSync(googleServicesFile)) android.googleServicesFile = "./google-services.json";
+
+  const plugins = [
+    ...(config.plugins ?? []),
+    (c) => withHomeScreenName(c, homeScreenName),
+    // The launch screen. Since SDK 52 the root `splash` key is ignored —
+    // without this plugin iOS pointed at a splash image that was never
+    // generated and Android fell back to a system default, so guests saw
+    // a stale picture on first open (owner, 2026-09-22). Image and colour
+    // come from the brand file, so a rebrand re-runs through here.
+    [
+      "expo-splash-screen",
+      {
+        // The mascot CUT OUT, on the brand red — the same figure the
+        // launch screen draws, at close to the same size (owner,
+        // 2026-09-22: "why do I see a white screen with logo and then the
+        // launching screen?").
+        //
+        // It used to be a white medallion with a gold ring, so the app
+        // opened on a white disc and then replaced it with a cut-out
+        // mascot: two different logos back to back, which is exactly what
+        // that flash was. Same artwork and the same red on both sides
+        // means the hand-off is now a change of layout rather than a
+        // change of picture. The generated splash.png is not used — it
+        // carries a white square behind the mascot.
+        image: "./assets/logo-cutout.png",
+        backgroundColor: generated.splash?.backgroundColor ?? "#8f1a1a",
+        resizeMode: "contain",
+        imageWidth: 180,
+      },
+    ],
+    "expo-localization",
+    "expo-secure-store",
+    "expo-web-browser",
+    // Native Stripe PaymentSheet. Unconditional: the publishable key is NOT
+    // baked into the build, it arrives from the server per order, so there is
+    // no credential to gate this on. `enableGooglePay` writes the
+    // `com.google.android.gms.wallet.api.enabled` manifest flag Google Pay
+    // needs.
+    //
+    // Apple Pay rides on APPLE_MERCHANT_ID (⛔ above): with it, the
+    // plugin writes the `com.apple.developer.in-app-payments`
+    // entitlement and `src/payments.ts` turns the sheet's Apple Pay row
+    // and the platform-pay button on. Without it — the default — the
+    // plugin options are exactly what they were before P7-13.
+    [
+      "@stripe/stripe-react-native",
+      {
+        enableGooglePay: true,
+        ...(appleMerchantId ? { merchantIdentifier: appleMerchantId } : {}),
+      },
+    ],
+  ];
+  // Native one-tap Google sign-in is opt-in per build: without the iOS
+  // client id there is no URL scheme to register, and the plugin throws
+  // rather than shipping a half-configured sheet.
+  const scheme = iosUrlScheme(process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID);
+  if (scheme) {
+    plugins.push(["@react-native-google-signin/google-signin", { iosUrlScheme: scheme }]);
+  }
+
+  /**
+   * Android App Links for the delivery ticket's QR. `autoVerify` makes
+   * Android check `https://<host>/.well-known/assetlinks.json` against
+   * the installed app's signing certificate; until that file carries the
+   * real fingerprint (BUILDS.md, "Deep links for the driver dispatch
+   * QR") verification simply fails and the link opens in the browser,
+   * which is the current behaviour and a complete flow.
+   *
+   * Merged rather than replaced, so a generated `android` block that
+   * ever grows its own filters is not silently dropped.
+   */
+  const host = siteHost();
+  if (host) {
+    android.intentFilters = [
+      ...(android.intentFilters ?? []),
+      {
+        action: "VIEW",
+        autoVerify: true,
+        data: [{ scheme: "https", host, pathPrefix: "/dispatch" }],
+        category: ["BROWSABLE", "DEFAULT"],
+      },
+    ];
+  }
+
+  // ⛔ See `appleUniversalLinks` above: without the paid Apple account
+  // this stays absent, and the entitlement is never written.
+  const ios = { ...config.ios, ...generated.ios };
+  ios.infoPlist = { ...ios.infoPlist, CFBundleDisplayName: homeScreenName };
+  // Order notifications are "time-sensitive" (the server sends
+  // interruptionLevel), so the restaurant's bell gets through a Focus mode
+  // such as Do Not Disturb (owner, 2026-10-14: "the notification came but
+  // without sound").
+  ios.entitlements = {
+    ...ios.entitlements,
+    "com.apple.developer.usernotifications.time-sensitive": true,
+  };
+  if (host && appleUniversalLinks) {
+    ios.associatedDomains = [...(ios.associatedDomains ?? []), `applinks:${host}`];
+  }
+
+  // `splash` is the pre-SDK-52 launch-screen key: ignored by the build and
+  // rejected by expo-doctor. The launch screen is the expo-splash-screen
+  // plugin above, so the generated key is dropped here.
+  const { splash: _legacySplash, ...generatedConfig } = generated;
+  return {
+    ...config,
+    ...generatedConfig,
+    ios,
+    android,
+    web: { ...config.web, ...generated.web },
+    plugins,
+    // The Apple Pay keys go on LAST so a regenerated brand file can never
+    // clobber them; the runtime reads both through `expo-constants`
+    // (`src/payments.ts`). `applePayEnabled` is the one flag every UI
+    // gate checks, `appleMerchantId` is what `initStripe` needs.
+    extra: {
+      ...config.extra,
+      ...generated.extra,
+      // The commit this build was made from, shown beside the version on the
+      // Account screen and in the restaurant menu — two builds with the same
+      // version number are still told apart (owner, 2026-10-07).
+      buildCode: gitShortCommit(),
+      applePayEnabled: Boolean(appleMerchantId),
+      ...(appleMerchantId ? { appleMerchantId } : {}),
+    },
+  };
+};

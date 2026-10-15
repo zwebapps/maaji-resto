@@ -1,0 +1,520 @@
+import { orderLabel } from "./order-label";
+import type { KitchenOrder } from "./order-service";
+import { onlinePaymentLabel } from "./payment-methods";
+
+/**
+ * The 80 mm kitchen ticket as ONE self-contained HTML document.
+ *
+ * ## Why a string and not a React component
+ *
+ * The counter iPad prints through `expo-print`'s `printAsync({ html })`,
+ * which hands the markup to the OS print pipeline (AirPrint on iOS,
+ * the Android print framework) in a WebView that has no network identity
+ * and no stylesheet of ours. So the ticket has to arrive complete:
+ * inline `<style>`, no Tailwind, no font file, no image URL. Anything
+ * fetched is a race between the print dialog and the network, and the
+ * thing that loses prints blank.
+ *
+ * `/print/order/{id}` stays a React page for the dashboard's own Print
+ * button — that one runs in a browser that already has the app's CSS.
+ * The two share their SHAPING (`ticketAddressLine`, `ticketDirectionsUrl`)
+ * rather than their markup, because the constraints genuinely differ.
+ *
+ * ## Print-hostile things deliberately avoided
+ *
+ * - No colour emoji: thermal drivers rasterise SVG happily and choke on
+ *   emoji fonts, so the info rows use the same 24×24 vector glyphs the
+ *   print page does.
+ * - No `position`, no flex gaps wider than the roll: at 302 px a stray
+ *   horizontal overflow silently clips the price column.
+ * - `@page { margin: 0 }` because a receipt printer's own margin is the
+ *   roll edge; anything the renderer adds is wasted paper per ticket.
+ *   `@media print` narrows that to `size: 80mm auto`, so a printer that
+ *   honours page size cuts to the roll instead of centring 80 mm of ticket
+ *   on an A4 sheet — and where it is ignored, the column's auto side
+ *   margins still put it in the middle of whatever paper turns up.
+ */
+
+/** Material icon paths (24×24) for the ticket's info rows. */
+const GLYPHS = {
+  phone:
+    "M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z",
+  person:
+    "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+  pin: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
+  clock:
+    "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z",
+  table:
+    "M21.96 9.73l-1.43-5C20.41 4.3 20.02 4 19.6 4H4.4c-.42 0-.81.3-.93.73l-1.43 5c-.18.63.3 1.27.96 1.27h2.2L4 20h2l.67-5h10.67l.66 5h2l-1.2-9H21c.66 0 1.14-.64.96-1.27zM6.93 13l.27-2h9.6l.27 2H6.93z",
+  note: "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z",
+} as const;
+
+type Glyph = keyof typeof GLYPHS;
+
+/** The ticket's view of an order. `KitchenOrder` satisfies it; the extra
+ *  optional per-line `note` is accepted so a kitchen note added later
+ *  prints without another renderer. */
+export interface TicketOrder {
+  orderNumber: number;
+  /** "B" (cash) / "O" (online); null on older orders. */
+  orderSeries?: string | null;
+  orderType: string;
+  tableNumber: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  requestedFor: Date | null;
+  deliveryAddress: { street?: string; zip?: string; city?: string; note?: string } | null;
+  paymentStatus: string;
+  paymentProvider: string | null;
+  /** How a Stripe payment was made ("apple_pay", …); absent/null = card. */
+  paymentMethod?: string | null;
+  discountCents: number;
+  /** Order-wide discount: percent and cents off the food (owner, 2026-10-11). */
+  orderDiscountPercent?: number;
+  orderDiscountCents?: number;
+  /** Points the reward cost. 0 = no reward, or an order from before the
+   *  column existed — the row then omits the points. */
+  discountPoints: number;
+  /** Cents a gift card paid. 0 = none; its own row under the reward,
+   *  because one order can carry both. */
+  giftCardDiscountCents: number;
+  /** Last 4 characters of the card's code, masked on the row so the
+   *  counter can match it to the card in the guest's hand. */
+  giftCardLast4: string | null;
+  totalCents: number;
+  currency: string;
+  createdAt: Date;
+  /** "app" / "web" — printed as App- or Website-Bestellung. */
+  orderChannel?: string | null;
+  items: {
+    name: string;
+    quantity: number;
+    priceCents: number;
+    note?: string | null;
+    /** The regular price an offer was cut from; shown crossed out. */
+    basePriceCents?: number | null;
+  }[];
+}
+
+/* A compile-time nudge: if `KitchenOrder` ever stops fitting the ticket,
+   fail here rather than at a counter with a printer waiting. */
+const _kitchenOrderFits: (o: KitchenOrder) => TicketOrder = (o) => o;
+void _kitchenOrderFits;
+
+export interface TicketVenue {
+  name: string;
+  /** Wall-clock the kitchen reads; defaults to the deploy's own. */
+  timezone?: string | null;
+}
+
+export interface TicketOptions {
+  /** Formatting locale for times and money. The ticket's fixed words stay
+   *  bilingual DE/EN — the counter reads one, a tourist courier the other. */
+  locale?: string;
+}
+
+const DEFAULT_TZ = "Europe/Berlin";
+const DEFAULT_LOCALE = "de";
+const RULE = "--------------------------------------";
+
+/** Escape for HTML text and attribute values alike. */
+function esc(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** "Bornstraße 12, 44145 Dortmund" for a delivery with a street, else
+ *  null. Shared with the print page's QR so the address the driver
+ *  navigates to is the address printed above it. */
+export function ticketAddressLine(order: {
+  orderType: string;
+  deliveryAddress: { street?: string; zip?: string; city?: string } | null;
+}): string | null {
+  const a = order.deliveryAddress;
+  if (order.orderType !== "delivery" || !a?.street) return null;
+  return [a.street, [a.zip, a.city].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+}
+
+/** Universal Maps directions link: opens turn-by-turn navigation from any
+ *  phone camera — no app account, nothing typed. */
+export function ticketDirectionsUrl(addressLine: string): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addressLine)}&travelmode=driving`;
+}
+
+/**
+ * The restaurant's name as the ticket head prints it: the name large on
+ * one line, the town small underneath — "Rangla Punjab Restaurant ·
+ * Konstanz" → "Rangla Punjab Restaurant" / "Konstanz" (owner, 2026-10-05),
+ * instead of a dot left dangling at the end of a wrapped first line.
+ */
+export function ticketVenueName(name: string): { main: string; sub: string | null } {
+  const at = name.indexOf("·");
+  if (at <= 0) return { main: name.trim(), sub: null };
+  const sub = name.slice(at + 1).trim();
+  return { main: name.slice(0, at).trim(), sub: sub || null };
+}
+
+/** How an online order was paid, in the ticket's German: "Apple Pay",
+ *  "Google Pay", "PayPal", or "Karte" for a plain card. */
+function paidVia(order: TicketOrder): string {
+  const label = onlinePaymentLabel(order.paymentProvider, order.paymentMethod);
+  return label === "Card" ? "Karte" : label;
+}
+
+/**
+ * "Abholung ca. 18:45 Uhr" / "Lieferung ca. 19:10 Uhr" — the time the
+ * restaurant promised (accepted, or the default once the accept window ran
+ * out), printed on BOTH the guest's ticket and the kitchen copy (owner,
+ * 2026-10-11). Null for dine-in, for a scheduled order (its own "Geplant
+ * für" line says when) and when there is no promise yet.
+ */
+export function ticketReadyLine(
+  order: Pick<TicketOrder, "orderType" | "requestedFor">,
+  readyAt: Date | null | undefined,
+  timeZone = DEFAULT_TZ,
+): string | null {
+  if (!readyAt || order.requestedFor) return null;
+  if (order.orderType !== "takeaway" && order.orderType !== "delivery") return null;
+  const hhmm = new Intl.DateTimeFormat("de-DE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+  }).format(readyAt);
+  return `${order.orderType === "delivery" ? "Lieferung" : "Abholung"} ca. ${hhmm} Uhr`;
+}
+
+export function typeBanner(order: TicketOrder): string {
+  if (order.orderType === "delivery") return "LIEFERUNG";
+  if (order.orderType === "takeaway") return "ABHOLUNG";
+  return `IM RESTAURANT${order.tableNumber ? ` — TISCH ${order.tableNumber}` : ""}`;
+}
+
+/**
+ * An amount as the receipt writes it: the € sign FIRST, "€ 21,80" (owner,
+ * 2026-10-11), German decimals. Another currency shows its code instead.
+ */
+export function ticketMoney(cents: number, currency: string): string {
+  const sign = cents < 0 ? "-" : "";
+  const n = new Intl.NumberFormat("de-DE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(cents) / 100);
+  const symbol = !currency || currency === "EUR" ? "€" : currency;
+  return `${sign}${symbol}\u00a0${n}`;
+}
+
+/** Was this line an offer? The regular price it was cut from, or null. */
+export function offerWasCents(item: {
+  priceCents: number;
+  quantity: number;
+  basePriceCents?: number | null;
+}): number | null {
+  return item.basePriceCents != null && item.basePriceCents > item.priceCents
+    ? item.basePriceCents * item.quantity
+    : null;
+}
+
+/** "App-Bestellung" / "Website-Bestellung" — where the order came from
+ *  (owner, 2026-10-11); "Online-Bestellung" on older orders. */
+export function channelLine(order: Pick<TicketOrder, "orderChannel">): string {
+  if (order.orderChannel === "app") return "App-Bestellung";
+  if (order.orderChannel === "web") return "Website-Bestellung";
+  return "Online-Bestellung";
+}
+
+/** The bold line under the header: what the kitchen must know about money
+ *  before it hands anything over. */
+export function paymentBanner(order: TicketOrder): string | null {
+  if (order.paymentStatus === "paid") {
+    if (order.paymentProvider === "voucher") {
+      return "** MIT GUTSCHEIN BEZAHLT **";
+    }
+    if (order.paymentProvider === "gift_card") {
+      return "** MIT GESCHENKGUTSCHEIN BEZAHLT **";
+    }
+    return `** ONLINE BEZAHLT (${paidVia(order).toUpperCase()}) **`;
+  }
+  if (order.paymentStatus === "pending") return "** ONLINE-ZAHLUNG OFFEN **";
+  return null;
+}
+
+export function paymentFooter(order: TicketOrder): string {
+  if (order.paymentStatus === "paid") {
+    if (order.paymentProvider === "voucher") {
+      return "Mit Treuegutschein bezahlt – nichts kassieren.";
+    }
+    if (order.paymentProvider === "gift_card") {
+      return "Mit Geschenkgutschein bezahlt – nichts kassieren.";
+    }
+    return `Online bezahlt (${paidVia(order)}) – nichts kassieren.`;
+  }
+  if (order.paymentStatus === "pending") {
+    return "Online-Zahlung noch NICHT bestätigt – nicht herausgeben, auf den bezahlten Bon warten.";
+  }
+  return "Zahlung im Restaurant.";
+}
+
+function infoRow(glyph: Glyph, label: string, text: string, bold = false): string {
+  return (
+    `<p class="row${bold ? " b" : ""}">` +
+    `<span class="ico"><svg viewBox="0 0 24 24" width="14" height="14" role="img" aria-label="${esc(label)}">` +
+    `<path d="${GLYPHS[glyph]}" fill="currentColor"/></svg></span>` +
+    `<span class="txt">${esc(text)}</span></p>`
+  );
+}
+
+/**
+ * Render the whole ticket.
+ *
+ * `navQrSvg` is passed in rather than rendered here so this stays
+ * synchronous and pure — the QR encoder is async, and a renderer that
+ * can only be called with `await` is a renderer that cannot be a test
+ * assertion or a template literal. Build it with
+ * `renderQrSvg(ticketDirectionsUrl(ticketAddressLine(order)!))`.
+ */
+export function renderTicketHtml(
+  order: TicketOrder,
+  venue: TicketVenue,
+  opts: TicketOptions & {
+    navQrSvg?: string | null;
+    logoDataUri?: string | null;
+    /** Print the kitchen's copy after the staff ticket (default yes). */
+    kitchenCopy?: boolean;
+    /** The promised pickup/delivery time (see `ticketReadyLine`). */
+    readyAt?: Date | null;
+  } = {},
+): string {
+  const locale = opts.locale || DEFAULT_LOCALE;
+  const timeZone = venue.timezone || DEFAULT_TZ;
+  const stamp = new Intl.DateTimeFormat(locale, {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone,
+  });
+  const clock = new Intl.DateTimeFormat(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+  });
+
+  const addressLine = ticketAddressLine(order);
+  const money = (cents: number): string => ticketMoney(cents, order.currency);
+
+  const rows: string[] = [];
+  const readyLine = ticketReadyLine(order, opts.readyAt, timeZone);
+  if (readyLine) rows.push(infoRow("clock", "ZEIT", readyLine, true));
+  if (order.requestedFor) {
+    rows.push(
+      infoRow("clock", "ZEIT", `Geplant für ${clock.format(order.requestedFor)} Uhr`, true),
+    );
+  }
+  if (order.orderType === "dine_in" && order.tableNumber) {
+    rows.push(infoRow("table", "TISCH", `Tisch ${order.tableNumber}`, true));
+  }
+  if (order.customerName) rows.push(infoRow("person", "NAME", order.customerName));
+  if (order.customerPhone) rows.push(infoRow("phone", "TEL", order.customerPhone));
+  if (addressLine) rows.push(infoRow("pin", "ADR", addressLine));
+  if (order.orderType === "delivery" && order.deliveryAddress?.note) {
+    rows.push(infoRow("note", "INFO", order.deliveryAddress.note));
+  }
+
+  const items = order.items
+    .map((item) => {
+      const line =
+        `<li><span class="qty">${item.quantity}x</span> <span class="nm">${esc(item.name)}</span>` +
+        `<span class="amt">${
+          // An offer: the regular price crossed out, then what was charged.
+          offerWasCents(item) !== null
+            ? `<s class="was">${esc(money(offerWasCents(item)!))}</s> `
+            : ""
+        }${esc(money(item.priceCents * item.quantity))}</span></li>`;
+      // A per-line note belongs UNDER its dish, indented: the cook reads
+      // the column of dish names first and the exception second.
+      return item.note ? `${line}<li class="note">${esc(item.note)}</li>` : line;
+    })
+    .join("");
+  // The kitchen's copy (owner, 2026-10-05): order number and dishes only —
+  // no guest name, phone, address or money; the cook needs none of it.
+  const kitchenItems = order.items
+    .map((item) => {
+      const line = `<li><span class="qty">${item.quantity}x</span> <span class="nm">${esc(item.name)}</span></li>`;
+      return item.note ? `${line}<li class="note">${esc(item.note)}</li>` : line;
+    })
+    .join("");
+
+  const paid = paymentBanner(order);
+  const venueName = ticketVenueName(venue.name);
+
+  return `<!DOCTYPE html>
+<html lang="${esc(locale)}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=302">
+<title>${esc(`#${orderLabel(order)} — ${venue.name}`)}</title>
+<style>
+@page { margin: 0; size: auto; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+body {
+  /* The ticket column is always 80 mm (302 px); the auto side margins centre
+     it on anything wider — the phone's print preview, A4 paper, a PDF export
+     — instead of pinning it to the left edge. Auto margins are horizontal
+     only, so the ticket still starts at the top of the page. */
+  width: 302px;
+  margin: 0 auto;
+  padding: 8px 10px 16px;
+  font-family: "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
+  /* Big and heavy: a thermal head prints thin 13 px monospace faint and
+     broken (owner, 2026-10-11: "the kitchen ticket is clear, the order
+     receipt is not") — the receipt now uses the kitchen copy's weights. */
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  -webkit-text-size-adjust: 100%;
+}
+p { margin: 0; }
+.venue { text-align: center; font-size: 19px; font-weight: 700; text-transform: uppercase; }
+.logo { text-align: center; margin-bottom: 4px; }
+.logo img { width: 80px; height: auto; }
+.venue-sub { text-align: center; font-size: 13px; }
+.kind { margin-top: 4px; text-align: center; font-size: 13px; font-weight: 700; }
+.rule { margin: 7px 0; overflow: hidden; white-space: nowrap; }
+.head { display: flex; justify-content: space-between; font-weight: 700; font-size: 17px; }
+.pay { margin-top: 2px; font-weight: 700; }
+.banner {
+  margin-top: 7px;
+  border-top: 2px solid #000;
+  border-bottom: 2px solid #000;
+  padding: 3px 0;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: .05em;
+}
+.rows { margin-top: 7px; }
+.row { display: flex; gap: 7px; margin-top: 3px; }
+.row.b { font-weight: 700; }
+.ico { flex: 0 0 18px; display: flex; justify-content: center; padding-top: 2px; }
+.txt { min-width: 0; word-break: break-word; }
+.qr { margin-top: 10px; text-align: center; }
+.qr svg { width: 140px; height: 140px; }
+.qr p { margin-top: 3px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+ul { margin: 0; padding: 0; list-style: none; }
+li { display: flex; justify-content: space-between; gap: 7px; margin-top: 3px; }
+li.note { display: block; padding-left: 20px; font-size: 14px; }
+.qty { font-weight: 700; }
+.nm { font-weight: 700; flex: 1 1 auto; min-width: 0; word-break: break-word; }
+.amt { flex: 0 0 auto; white-space: nowrap; }
+.was { font-weight: 400; font-size: 13px; text-decoration-thickness: 2px; margin-right: 2px; }
+.total { display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; }
+.disc { display: flex; justify-content: space-between; }
+.foot { margin-top: 7px; text-align: center; font-size: 13px; }
+/* The kitchen copy starts on its own page, so a receipt printer cuts the
+   paper between the two tickets. */
+.kitchen { break-before: page; page-break-before: always; padding-top: 8px; }
+/* Kitchen copy: order type and promised time like the receipt, a little
+   smaller type and a longer slip (owner, 2026-10-11). */
+.kitchen-title { text-align: center; font-size: 16px; font-weight: 700; letter-spacing: .08em; }
+.kitchen-head { font-size: 15px; }
+.kitchen-when { margin-top: 5px; font-size: 15px; font-weight: 700; text-align: center; }
+.kitchen-end { height: 48px; }
+.kitchen-items li { margin-top: 8px; font-size: 15px; justify-content: flex-start; }
+@media print {
+  /* A receipt printer that honours the page size cuts to the roll instead of
+     padding the ticket out to a letter/A4 sheet. One that ignores it falls
+     back to the real paper, where the auto margins keep the column centred. */
+  @page { size: 80mm auto; margin: 0; }
+  body { width: 302px; margin: 0 auto; padding: 0 6px 6px; }
+  .qr svg { width: 132px; height: 132px; }
+}
+</style>
+</head>
+<body>
+${
+  // Only ever an inline data: URI built by `ticket-logo.ts` — the ticket
+  // must print with no network, so a remote src is never accepted here.
+  opts.logoDataUri?.startsWith("data:image/")
+    ? `<p class="logo"><img src="${esc(opts.logoDataUri)}" alt=""></p>`
+    : ""
+}
+<p class="venue">${esc(venueName.main)}</p>
+${venueName.sub ? `<p class="venue-sub">${esc(venueName.sub)}</p>` : ""}
+<p class="kind">${esc(channelLine(order))}</p>
+<p class="rule">${RULE}</p>
+<div class="head"><span>#${orderLabel(order)}</span><span>${esc(stamp.format(order.createdAt))}</span></div>
+${paid ? `<p class="pay">${esc(paid)}</p>` : ""}
+<p class="banner">${esc(typeBanner(order))}</p>
+${rows.length > 0 ? `<div class="rows">${rows.join("")}</div>` : ""}
+${
+  // Our own generated markup from our own qr lib — never user input.
+  // The QR now encodes OUR dispatch link rather than the Maps URL
+  // directly (see `dispatch-service.ts`): scanning it flips the order to
+  // "out for delivery" and THEN forwards to the same route, so the
+  // driver's one existing gesture is what tells the guest the food left.
+  // The caption says both things it now does, in the ticket's two
+  // languages, because a driver who thinks it is only navigation will
+  // stop scanning it the day their phone remembers the address.
+  opts.navQrSvg
+    ? `<div class="qr">${opts.navQrSvg}<p>&gt;&gt; Scan: unterwegs + Route / out for delivery + route &lt;&lt;</p></div>`
+    : ""
+}
+<p class="rule">${RULE}</p>
+<ul>${items}</ul>
+<p class="rule">${RULE}</p>
+${
+  // The dishes keep their menu prices; the reward comes off here, so the
+  // ticket's arithmetic matches the till.
+  // The points are on the label so the counter can see what the guest
+  // gave up for it; 0 means an order from before the column existed and
+  // the row reads exactly as it always did.
+  (order.orderDiscountCents ?? 0) > 0
+    ? `<div class="disc"><span>RABATT ${order.orderDiscountPercent ?? 0} %</span><span>-${esc(money(order.orderDiscountCents ?? 0))}</span></div>`
+    : ""
+}
+${
+  order.discountCents > 0
+    ? `<div class="disc"><span>GUTSCHEIN${
+        order.discountPoints > 0 ? ` &middot; ${order.discountPoints} P` : ""
+      }</span><span>-${esc(money(order.discountCents))}</span></div>`
+    : ""
+}
+${
+  // A gift card is its own row directly under the reward — a guest can
+  // spend both on one order — and the masked last 4 are what let the
+  // counter tie the line to the card that was handed over.
+  order.giftCardDiscountCents > 0
+    ? `<div class="disc"><span>GESCHENKGUTSCHEIN${
+        order.giftCardLast4 ? ` &middot;&middot;&middot;&middot;${esc(order.giftCardLast4)}` : ""
+      }</span><span>-${esc(money(order.giftCardDiscountCents))}</span></div>`
+    : ""
+}
+<div class="total"><span>GESAMT</span><span>${esc(money(order.totalCents))}</span></div>
+<p class="foot">${esc(paymentFooter(order))}</p>
+${
+  opts.kitchenCopy === false
+    ? ""
+    : `<section class="kitchen">
+${
+  // The logo on the kitchen copy too (owner, 2026-10-11).
+  opts.logoDataUri?.startsWith("data:image/")
+    ? `<p class="logo"><img src="${esc(opts.logoDataUri)}" alt=""></p>`
+    : ""
+}
+<p class="kitchen-title">K&Uuml;CHENBON</p>
+<p class="rule">${RULE}</p>
+<div class="head kitchen-head"><span>#${orderLabel(order)}</span><span>${esc(stamp.format(order.createdAt))}</span></div>
+<p class="banner">${esc(typeBanner(order))}</p>
+${readyLine || order.requestedFor ? `<p class="kitchen-when">${esc(readyLine ?? `Geplant für ${clock.format(order.requestedFor!)} Uhr`)}</p>` : ""}
+<p class="rule">${RULE}</p>
+<ul class="kitchen-items">${kitchenItems}</ul>
+<p class="rule">${RULE}</p>
+<p class="kitchen-end">&nbsp;</p>
+</section>`
+}
+</body>
+</html>`;
+}

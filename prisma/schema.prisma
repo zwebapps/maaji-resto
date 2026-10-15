@@ -1,0 +1,1308 @@
+// Elvoria data model — spec §5.
+// Conventions: integer cents (never floats), soft-delete on tenant-owned entities,
+// created_at/updated_at everywhere, tenant_id on every tenant-owned table so RLS
+// (P0-4) can enforce isolation directly rather than via joins.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Prisma 7 no longer accepts `url` or `directUrl` in the schema.
+  // Every connection URL lives in `prisma.config.ts` (migrate + shadow
+  // DB) and in `src/lib/db.ts` (app runtime via a driver adapter).
+  provider = "postgresql"
+}
+
+// ---------- enums ----------
+
+enum Role {
+  owner
+  staff
+}
+
+enum TenantStatus {
+  active
+  suspended
+  cancelled
+}
+
+enum VenueStatus {
+  active
+  disabled
+}
+
+enum MenuVersionStatus {
+  draft
+  published
+}
+
+// 14 EU-regulated allergens (Reg. 1169/2011). Structured, never free text.
+enum Allergen {
+  gluten
+  crustaceans
+  eggs
+  fish
+  peanuts
+  soybeans
+  milk
+  nuts
+  celery
+  mustard
+  sesame
+  sulphites
+  lupin
+  molluscs
+}
+
+enum Dietary {
+  vegetarian
+  vegan
+  halal
+  kosher
+  gluten_free
+  dairy_free
+}
+
+// P2-1: operator fee model. `upfront` ⇒ 0% per order (the operator bills a
+// one-time lump sum out of band); `percentage` ⇒ `feeBp` basis points on
+// orders strictly over `feeMinCents`.
+enum FeeMode {
+  upfront
+  percentage
+}
+
+// P1-28a: AI menu-import lifecycle.
+// `queued` → `extracting` → `ready` on a happy path; either state can
+// transition to `failed`. `discarded` is a user-invoked close for drafts
+// that the operator does not want to keep. `confirmed` (P1-29) means the
+// ---------- tenancy ----------
+
+model Tenant {
+  id                    String       @id @default(cuid())
+  name                  String
+  status                TenantStatus @default(active)
+  // P1-4 onboarding wizard state — see migration comments. JSONB so the
+  // shape can evolve without a migration per step.
+  onboardingState       Json         @default("{\"step\":1}") @map("onboarding_state")
+  onboardingCompletedAt DateTime?    @map("onboarding_completed_at")
+  // Plan OVERRIDE (admin exceptions). NULL = follow the Stripe
+  // subscription — the normal state. See src/lib/plan-state.ts.
+  plan                  String?
+  entitlementOverrides  Json         @default("{}") @map("entitlement_overrides")
+  // Stripe Connect: the restaurant's own account — guest payments land
+  // there; Elvoria takes an application fee (src/lib/connect-service.ts).
+  stripeAccountId       String?      @map("stripe_account_id")
+  stripeChargesEnabled  Boolean      @default(false) @map("stripe_charges_enabled")
+
+  // "Own keys" payout mode (upfront/flat-fee plans): the restaurant charges
+  // guests with their OWN Stripe account, collecting 100%. Keys are encrypted
+  // at rest (src/lib/secrets.ts); *_mask is a safe display hint. Used only
+  // when ownKeysEnabled AND the operator fee mode is upfront.
+  stripeOwnSecretEnc   String?   @map("stripe_own_secret_enc")
+  stripeOwnSecretMask  String?   @map("stripe_own_secret_mask")
+  stripeOwnWebhookEnc  String?   @map("stripe_own_webhook_enc")
+  stripeOwnWebhookMask String?   @map("stripe_own_webhook_mask")
+  stripeOwnEnabled     Boolean   @default(false) @map("stripe_own_enabled")
+  /// Publishable key (pk_…) of the same own account. Public by design —
+  /// stored in plain text and shown unmasked, because the mobile app's
+  /// native payment sheet has to receive it verbatim. Unset falls back to
+  /// the deployment's STRIPE_PUBLISHABLE_KEY.
+  stripeOwnPublishable String?   @map("stripe_own_publishable")
+  /// PayPal, same posture as the Stripe own-keys above: the restaurant's
+  /// own REST app credentials, encrypted at rest, masked when shown. Unset
+  /// falls back to the deployment-wide PAYPAL_* env vars.
+  paypalClientIdEnc    String?   @map("paypal_client_id_enc")
+  paypalClientIdMask   String?   @map("paypal_client_id_mask")
+  paypalSecretEnc      String?   @map("paypal_secret_enc")
+  paypalSecretMask     String?   @map("paypal_secret_mask")
+  /// "sandbox" | "live" — which PayPal endpoint the credentials belong to.
+  paypalEnv            String    @default("sandbox") @map("paypal_env")
+  paypalOwnEnabled     Boolean   @default(false) @map("paypal_own_enabled")
+  /// PayPal webhook id (from developer.paypal.com → the app → Webhooks) —
+  /// the only input PayPal's verify-webhook-signature call needs besides
+  /// the request itself. Unset falls back to PAYPAL_WEBHOOK_ID.
+  paypalWebhookIdEnc   String?   @map("paypal_webhook_id_enc")
+  paypalWebhookIdMask  String?   @map("paypal_webhook_id_mask")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  deletedAt            DateTime?
+
+  memberships           Membership[]
+  venues                Venue[]
+  menus                 Menu[]
+  menuVersions          MenuVersion[]
+  categories            Category[]
+  items                 Item[]
+  itemVariants          ItemVariant[]
+  translations          Translation[]
+  media                 Media[]
+  orders                Order[]
+  orderItems            OrderItem[]
+  customers             Customer[]
+  loyaltyLedger         LoyaltyLedger[]
+  loyaltyVouchers       LoyaltyVoucher[]
+  orderIssues           OrderIssue[]
+  orderIssueMessages    OrderIssueMessage[]
+  staffDevices          StaffDevice[]
+  giftCardProducts      GiftCardProduct[]
+  giftCards             GiftCard[]
+  staffNotifications    StaffNotification[]
+  staffNotificationSeen StaffNotificationSeen[]
+
+  @@map("tenants")
+}
+
+model MenuTemplate {
+  id        String  @id @default(cuid())
+  key       String  @unique
+  name      String
+  cuisine   String
+  emoji     String  @default("🍽")
+  locale    String  @default("de")
+  active    Boolean @default(true)
+  sortIndex Int     @default(0) @map("sort_index")
+  // Category → item tree; validated by src/lib/menu-template-service.ts.
+  content   Json    @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("menu_templates")
+}
+
+model User {
+  id                String    @id @default(cuid())
+  // citext so "Alice@Ex.com" and "alice@ex.com" collide on the unique index —
+  // enforced at the DB, not by app-side lowercasing (see migration comments).
+  email             String    @unique @db.Citext
+  passwordHash      String    @map("password_hash")
+  emailVerifiedAt   DateTime? @map("email_verified_at")
+  // Session cutoff: cookies with `iat < sessions_valid_from` are rejected,
+  // so password reset (P1-2b) invalidates every outstanding session in one
+  // DB write without needing a server-side session store.
+  sessionsValidFrom DateTime  @default(now()) @map("sessions_valid_from")
+  // Elvoria staff flag — grants /admin, deliberately not a membership.
+  isPlatformAdmin   Boolean   @default(false) @map("is_platform_admin")
+  locale            String    @default("en")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+
+  memberships             Membership[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+  staffDevices            StaffDevice[]
+  staffNotificationSeen   StaffNotificationSeen[]
+
+  @@map("users")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique @map("token_hash")
+  userId    String    @map("user_id")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique @map("token_hash")
+  userId    String    @map("user_id")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model Membership {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  tenantId    String   @map("tenant_id")
+  role        Role     @default(staff)
+  /// What a `staff` member may open in the dashboard — see
+  /// src/lib/team-access.ts for the list. Ignored for `owner`, who has
+  /// everything. Empty = nothing (deny by default).
+  permissions String[] @default([])
+  /// The owner's label for this person ("Ali — kitchen"). Owners: null.
+  displayName String?  @map("display_name")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+  @@map("memberships")
+}
+
+// ---------- venues & menus ----------
+
+model Venue {
+  id                  String      @id @default(cuid())
+  tenantId            String      @map("tenant_id")
+  name                String
+  slug                String      @unique // immutable; renames create SlugRedirect
+  timezone            String      @default("Europe/Berlin")
+  currency            String      @default("EUR")
+  defaultLocale       String      @default("en") @map("default_locale")
+  enabledLocales      String[]    @default(["en"]) @map("enabled_locales")
+  branding            Json        @default("{}")
+  // Owner-side ordering switches + delivery zones (src/lib/ordering-config.ts).
+  ordering            Json        @default("{}")
+  // Weekly opening hours (src/lib/opening-hours.ts); {} = not set.
+  hours               Json        @default("{}")
+  // Owner-side loyalty switches (src/lib/loyalty-config.ts); {} = defaults,
+  // and the default is OFF, so an untouched venue shows guests nothing.
+  loyalty             Json        @default("{}")
+  // Owner-side gift-card switches (src/lib/gift-card-config.ts); {} =
+  // defaults, and unlike loyalty the default is ON — a gift card is a
+  // product the owner asked for. The per-product `active` flag is the
+  // finer gate, so a venue with no active products still shows nothing.
+  giftCards           Json        @default("{}") @map("gift_cards")
+  // The restaurant's own phone numbers (src/lib/contact-config.ts):
+  // `{ landline, mobile, whatsapp }`, each an E.164 string or null, and
+  // {} = none published. Stored normalised so the display string and the
+  // `tel:` / `wa.me` links are derived, never typed twice.
+  contact             Json        @default("{}")
+  // Where a guest gets the venue's own app (src/lib/app-links-config.ts):
+  // `{ ios, android, apk }`, each an https URL string or null, and {} = no
+  // app published. The store slots are pinned to apps.apple.com /
+  // play.google.com; `apk` is a direct download the owner hosts.
+  appLinks            Json        @default("{}") @map("app_links")
+  // Google rating + review link (P7-14, src/lib/google-rating.ts). The
+  // Place ID is the owner's own setting; `google_rating` is a CACHE of what
+  // the Places API last answered — `{ rating, count, fetchedAt }`, refreshed
+  // at most once a day on menu load. `google_rating_manual` is the owner's
+  // own fallback — `{ rating, count, updatedAt }`, typed by hand in Settings
+  // for a deployment with no Places API key. The fetched cache always wins
+  // when it exists; the manual value is what shows when it doesn't. All
+  // three null ⇒ no rating anywhere. `google_rating_enabled` is the owner's
+  // on/off switch for the line itself: false hides it without losing either
+  // number, so switching it back on needs no retyping.
+  googlePlaceId       String?     @map("google_place_id")
+  googleRating        Json?       @map("google_rating")
+  googleRatingManual  Json?       @map("google_rating_manual")
+  googleRatingEnabled Boolean     @default(true) @map("google_rating_enabled")
+  status              VenueStatus @default(active)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  menus            Menu[]
+  redirects        SlugRedirect[]
+  orders           Order[]
+  reservations     Reservation[]
+  cateringRequests CateringRequest[]
+  deletedOrders    DeletedOrder[]
+  orderEvents      OrderEvent[]
+  orderIssues      OrderIssue[]
+  giftCardProducts GiftCardProduct[]
+  giftCardsSold    GiftCard[]
+
+  @@index([tenantId])
+  @@map("venues")
+}
+
+model SlugRedirect {
+  id        String   @id @default(cuid())
+  oldSlug   String   @unique @map("old_slug")
+  venueId   String   @map("venue_id")
+  createdAt DateTime @default(now())
+
+  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@map("slug_redirects")
+}
+
+model Menu {
+  id               String  @id @default(cuid())
+  tenantId         String  @map("tenant_id")
+  venueId          String  @map("venue_id")
+  name             String
+  schedule         Json    @default("{}")
+  isDefault        Boolean @default(false) @map("is_default")
+  publishedVersion String? @map("published_version")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  venue    Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  versions MenuVersion[]
+
+  @@index([tenantId])
+  @@index([venueId])
+  @@map("menus")
+}
+
+model MenuVersion {
+  id          String            @id @default(cuid())
+  tenantId    String            @map("tenant_id")
+  menuId      String            @map("menu_id")
+  status      MenuVersionStatus @default(draft)
+  publishedAt DateTime?         @map("published_at")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  menu       Menu       @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  categories Category[]
+
+  @@index([tenantId])
+  @@index([menuId])
+  @@map("menu_versions")
+}
+
+model Category {
+  id            String  @id @default(cuid())
+  tenantId      String  @map("tenant_id")
+  menuVersionId String  @map("menu_version_id")
+  name          String // default-locale display; other locales in Translation
+  orderIndex    Int     @default(0) @map("order_index")
+  photoMediaId  String? @map("photo_media_id")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  menuVersion MenuVersion @relation(fields: [menuVersionId], references: [id], onDelete: Cascade)
+  photoMedia  Media?      @relation(fields: [photoMediaId], references: [id], onDelete: SetNull)
+  items       Item[]
+
+  @@index([tenantId])
+  @@index([menuVersionId])
+  @@map("categories")
+}
+
+model Item {
+  id           String     @id @default(cuid())
+  tenantId     String     @map("tenant_id")
+  categoryId   String     @map("category_id")
+  name         String // default-locale display
+  description  String?
+  priceCents   Int        @map("price_cents")
+  currency     String     @default("EUR")
+  orderIndex   Int        @default(0) @map("order_index")
+  isAvailable  Boolean    @default(true) @map("is_available")
+  allergens    Allergen[] @default([])
+  traces       Allergen[] @default([])
+  dietary      Dietary[]  @default([])
+  spice        Int        @default(0)
+  flags        Json       @default("{}")
+  photoMediaId String?    @map("photo_media_id")
+
+  /// The DRAFT item this row was deep-copied from at publish time. Set on
+  /// every published copy (and back-filled onto the published rows when a
+  /// draft is forked from them), so an edit made in the restaurant's app can
+  /// reach BOTH halves of the pair and go live without a publish. NULL on
+  /// draft rows, and on published rows whose twin could not be identified.
+  sourceItemId String? @map("source_item_id")
+
+  /// A reduced FIXED price ("Angebot"), valid inside the optional date range
+  /// and/or the optional weekly venue-local window. Lives ON the item because
+  /// publish deep-copies the tree with fresh ids. CHECK: 0 < offer < price.
+  offerPriceCents Int?      @map("offer_price_cents")
+  offerStartsAt   DateTime? @map("offer_starts_at") @db.Timestamptz(6)
+  offerEndsAt     DateTime? @map("offer_ends_at") @db.Timestamptz(6)
+  /// {days: int[0..6], start: "HH:MM", end: "HH:MM"}, venue-local.
+  offerWeekly     Json?     @map("offer_weekly")
+
+  /// Weekdays the dish is on the menu, Monday-first (0 = Mon … 6 = Sun),
+  /// venue-local. Default every day. CHECK: 1–7 entries, each 0..6.
+  availableDays Int[] @default([0, 1, 2, 3, 4, 5, 6]) @map("available_days")
+
+  /// The dish is served at the table only: the menu shows it with a
+  /// "dine-in only" label in place of the add button, and a pickup or
+  /// delivery order containing it is refused.
+  dineInOnly Boolean @default(false) @map("dine_in_only")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? @map("deleted_at")
+
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category   Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  photoMedia Media?        @relation(fields: [photoMediaId], references: [id], onDelete: SetNull)
+  variants   ItemVariant[]
+
+  @@index([tenantId])
+  @@index([categoryId])
+  @@index([sourceItemId])
+  @@map("items")
+}
+
+model ItemVariant {
+  id              String @id @default(cuid())
+  tenantId        String @map("tenant_id")
+  itemId          String @map("item_id")
+  name            String
+  priceDeltaCents Int    @default(0) @map("price_delta_cents")
+  orderIndex      Int    @default(0) @map("order_index")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([itemId])
+  @@map("item_variants")
+}
+
+model Translation {
+  id         String @id @default(cuid())
+  tenantId   String @map("tenant_id")
+  entityType String @map("entity_type") // "item" | "category" | "venue" | ...
+  entityId   String @map("entity_id")
+  locale     String
+  field      String // "name" | "description" | ...
+  value      String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([entityType, entityId, locale, field])
+  @@index([tenantId])
+  @@map("translations")
+}
+
+model Media {
+  id         String  @id @default(cuid())
+  tenantId   String  @map("tenant_id")
+  storageKey String  @map("storage_key")
+  width      Int
+  height     Int
+  bytes      Int
+  altText    String? @map("alt_text")
+  // Original upload filename, normalised (lowercase basename). The join
+  // key for bulk image upload + Excel import: re-uploading the same
+  // filename replaces the image, and menu rows reference photos by it.
+  filename   String? @map("filename")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items      Item[]
+  categories Category[]
+
+  @@index([tenantId])
+  @@map("media")
+}
+
+// Per-event guest scan record. P2-9 reshaped from the earlier
+// aggregate-counter table so the partition manager (P2-10) can move
+// old months into cold storage. No PII stored — `uaClass` +
+// `referrerClass` are bucket names (e.g. `mobile-safari`, `search`),
+// not raw user-agent strings.
+//
+// PARTITION BY RANGE ("at") monthly. Prisma does not model partitions
+// natively; the migration attaches `PARTITION BY RANGE ("at")` to the
+// parent + creates monthly child tables. FKs cannot cross into a
+// partitioned parent, so `venueId` is denormalised (no relation).
+model ScanStat {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  venueId       String   @map("venue_id")
+  path          String
+  uaClass       String   @map("ua_class")
+  referrerClass String   @map("referrer_class")
+  at            DateTime @db.Timestamptz(6)
+
+  @@index([venueId, at])
+  @@index([tenantId, at])
+  @@map("scan_stats")
+}
+
+// Append-only audit log. Same partition shape as `scan_stats`;
+// retained longer (24 months by policy P2-10 vs 12 for scans) because
+// audit trails have compliance implications.
+model AuditEvent {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  actorUserId String?  @map("actor_user_id")
+  kind        String
+  targetKind  String   @map("target_kind")
+  targetId    String   @map("target_id")
+  meta        Json     @default("{}")
+  at          DateTime @db.Timestamptz(6)
+
+  @@index([tenantId, at])
+  @@index([actorUserId, at])
+  @@map("audit_events")
+}
+
+// Guest self-ordering (no payment yet). An order snapshots name + price
+// per line at placement time — later menu edits must never rewrite a
+// receipt. `orderNumber` is a per-venue running number for the printed
+// receipt; uniqueness is enforced so the create path can retry on race.
+model Order {
+  id                  String    @id @default(cuid())
+  tenantId            String    @map("tenant_id")
+  venueId             String    @map("venue_id")
+  orderNumber         Int       @map("order_number")
+  /// "B" = cash, "O" = online (owner, 2026-10-11); `orderNumber` counts within
+  /// the series. Null on orders placed before the split.
+  orderSeries         String?   @map("order_series")
+  /// "app" (the phone app) or "web" (the website); NULL on older orders.
+  orderChannel        String?   @map("order_channel")
+  tableNumber         String?   @map("table_number")
+  // dine_in | takeaway | delivery — CHECK-constrained in the migration.
+  orderType           String    @default("dine_in") @map("order_type")
+  customerName        String?   @map("customer_name")
+  customerPhone       String?   @map("customer_phone")
+  /// Optional: where the receipt email goes. Any order type.
+  customerEmail       String?   @map("customer_email")
+  /// The language the guest ordered in (a LOCALE_CODES value), sent by the
+  /// app / web cart. Picks the order e-mail's language first — before the
+  /// account's `Customer.locale` and the venue default — so a guest who
+  /// orders without an account still hears back in their own language.
+  locale              String?   @map("locale") @db.VarChar(8)
+  // {street, zip, city, note} for delivery orders.
+  deliveryAddress     Json?     @map("delivery_address")
+  // none = pay at restaurant; pending/paid/failed = online payment.
+  paymentStatus       String    @default("none") @map("payment_status")
+  paymentRef          String?   @map("payment_ref")
+  paymentProvider     String?   @map("payment_provider")
+  /// HOW a Stripe payment was made, read back from Stripe once it settled:
+  /// "apple_pay" | "google_pay" | "card" (or another Stripe method type).
+  /// NULL for cash/PayPal and for orders paid before it was recorded.
+  paymentMethod       String?   @map("payment_method")
+  customerId          String?   @map("customer_id")
+  applicationFeeCents Int       @default(0) @map("application_fee_cents")
+  status              String    @default("placed")
+  // Guest-requested fulfilment time (pickup/delivery). NULL = ASAP.
+  requestedFor        DateTime? @map("requested_for")
+  totalCents          Int       @map("total_cents")
+  currency            String
+  /// Client-supplied idempotency key. A submit that is retried after a
+  /// lost response carries the SAME key, so the second attempt returns
+  /// the order the first one created instead of cooking the food twice.
+  /// Deliberately stored HERE rather than in Redis: order creation must
+  /// not depend on Redis being up, and writing the key in the same
+  /// transaction as the order makes the pair atomic for free.
+  /// NULL for orders placed without a key (older clients, internal
+  /// seeds) — Postgres treats NULLs as distinct, so they never collide.
+  clientRequestId     String?   @map("client_request_id")
+  /// Loyalty voucher applied to this order, in cents. Round ONE never
+  /// writes anything but 0 — earning ships first, redemption (round two)
+  /// is what fills these two columns. They exist now so the column add is
+  /// not a second migration on a live orders table.
+  discountCents       Int       @default(0) @map("discount_cents")
+  /// `loyalty_vouchers.id` the discount above came from. Plain reference,
+  /// no FK: round two decides the delete/restore semantics.
+  voucherId           String?   @map("voucher_id")
+  /// The POINTS that voucher cost the guest, copied off
+  /// `loyalty_vouchers.points_spent` when the order was placed.
+  ///
+  /// Denormalised deliberately. Every surface that shows the reward line
+  /// — receipt PDF, both emails, the dashboard, the kitchen ticket, the
+  /// tracker, the app's three order screens — reads the ORDER, and
+  /// `voucherId` is a plain reference with no relation to join through,
+  /// so the alternative was eight separate voucher lookups for one
+  /// integer that can never change after redemption. 0 means "no reward"
+  /// or "placed before this column existed"; readers show the reward
+  /// line without the points rather than printing "0 points".
+  discountPoints      Int       @default(0) @map("discount_points")
+
+  /// Gift card spent on this order, in cents, and the `gift_cards.id` it
+  /// came from. Kept SEPARATE from `discountCents`/`voucherId` rather
+  /// than folded into them: a guest can hold a loyalty reward and a gift
+  /// card at once, the two stack, and every receipt has to be able to
+  /// name each line on its own. Plain reference, no FK — the order is a
+  /// financial record and outlives the card.
+  giftCardDiscountCents Int     @default(0) @map("gift_card_discount_cents")
+  /// The order-wide discount (owner, 2026-10-11): the percent in force when the
+  /// order was placed and the cents it took off the food (not the delivery fee).
+  orderDiscountPercent  Int     @default(0) @map("order_discount_percent")
+  orderDiscountCents    Int     @default(0) @map("order_discount_cents")
+  giftCardId            String? @map("gift_card_id")
+  /// Last four characters of the code, denormalised for the same reason
+  /// `discountPoints` is: eight surfaces render "Gift card ····1234"
+  /// straight off the order, and the full code is a bearer instrument
+  /// that has no business on a kitchen ticket or in an export.
+  giftCardLast4         String? @map("gift_card_last4")
+
+  /// When this delivery order left the kitchen — set once, by whichever
+  /// surface moved it to `out_for_delivery` (the board, the dashboard, or
+  /// a driver scanning the ticket's dispatch QR).
+  ///
+  /// A status says WHERE the order is; the guest's tracker and the board
+  /// both want to say WHEN ("on the way since 19:42"), and `updatedAt`
+  /// cannot answer that — it moves again on every later edit. NULL on
+  /// orders that predate the column, and on anything never dispatched;
+  /// both surfaces then show the step without a time rather than
+  /// inventing one.
+  outForDeliveryAt DateTime? @map("out_for_delivery_at")
+
+  /// Minutes the restaurant accepted the order with (delivery / pickup,
+  /// ASAP only). NULL = not answered inside the accept window → the
+  /// venue's default applies. See `src/lib/order-eta.ts`.
+  etaMinutes Int?      @map("eta_minutes")
+  /// When an online order was settled, i.e. reached the board.
+  paidAt     DateTime? @map("paid_at")
+
+  /// When the guest followed the "Rate us on Google" link for this order.
+  /// A TAP, not a review — Google never tells us whether one was written —
+  /// and the only signal we can honestly record. Set once by the tracked
+  /// redirect and never cleared; NULL means "not asked-and-answered yet",
+  /// which is what keeps the call-to-action on screen.
+  reviewClickedAt DateTime? @map("review_clicked_at")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  venue         Venue           @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  items         OrderItem[]
+  loyaltyLedger LoyaltyLedger[]
+  /// At most one complaint thread per order (P7-10).
+  issue         OrderIssue?
+  customer      Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@unique([venueId, orderSeries, orderNumber])
+  @@unique([venueId, clientRequestId])
+  @@index([tenantId])
+  @@map("orders")
+}
+
+/// Provider webhook events we have already processed.
+///
+/// Replaces a Redis SET: the payment-settlement path should not need
+/// Redis to be up, and an INSERT ... ON CONFLICT DO NOTHING is a
+/// stronger guard than SET NX anyway because it shares the database
+/// transaction with the work it protects.
+///
+/// Not tenant-scoped on purpose — the guard has to be global, and an
+/// event id is opaque. Pruned by the daily maintenance tick.
+model WebhookEvent {
+  /// The provider's own event id (e.g. Stripe `evt_...`).
+  id          String   @id
+  provider    String   @default("stripe")
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@index([processedAt])
+  @@map("webhook_events")
+}
+
+model OrderItem {
+  id             String  @id @default(cuid())
+  tenantId       String  @map("tenant_id")
+  orderId        String  @map("order_id")
+  // Plain reference (no FK): the source item lives inside a menu version
+  // that may be superseded or cleaned up; the snapshot below is the truth.
+  itemId         String? @map("item_id")
+  name           String
+  /// Regular price the charged price was reduced from; NULL = no offer.
+  basePriceCents Int?    @map("base_price_cents")
+  priceCents     Int     @map("price_cents")
+  quantity       Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([orderId])
+  @@map("order_items")
+}
+
+// ---------- operator (deploy-level) settings ----------
+
+// P2-1: a single-row table holding the operator-tunable knobs for this
+// deploy. Not tenant-scoped — one deploy serves one operator. The row is
+// pinned to a fixed id so there is always exactly one; the migration seeds
+// it and the accessor in src/lib/operator-settings.ts falls back to the
+// same defaults if it is ever missing.
+model OperatorSettings {
+  id          String  @id @default("singleton")
+  feeMode     FeeMode @default(percentage) @map("fee_mode")
+  feeBp       Int     @default(500) @map("fee_bp")
+  feeMinCents Int     @default(2000) @map("fee_min_cents")
+  siteActive  Boolean @default(true) @map("site_active")
+
+  // Optional runtime overrides for the email seam. NULL means "use the
+  // env value" (EMAIL_TRANSPORT / EMAIL_FROM), so an unset deploy behaves
+  // exactly as before; setting them from the Operator Console changes
+  // delivery live, with no restart. The Resend API key stays an env
+  // secret (never stored here).
+  emailTransport String? @map("email_transport")
+  emailFrom      String? @map("email_from")
+
+  // Active app theme id (drives data-theme on <html>). NULL ⇒ the default
+  // "Rangla Punjab" theme; other ids (e.g. "reztro") re-skin every surface.
+  appTheme String? @map("app_theme")
+
+  // Platform Stripe keys, operator-managed from /admin (so they change
+  // without a redeploy). *_enc = AES-GCM ciphertext (src/lib/secrets.ts);
+  // *_mask = safe-to-display hint. NULL ⇒ fall back to the env value.
+  stripeSecretEnc          String? @map("stripe_secret_enc")
+  stripeSecretMask         String? @map("stripe_secret_mask")
+  stripeWebhookEnc         String? @map("stripe_webhook_enc")
+  stripeWebhookMask        String? @map("stripe_webhook_mask")
+  stripeConnectWebhookEnc  String? @map("stripe_connect_webhook_enc")
+  stripeConnectWebhookMask String? @map("stripe_connect_webhook_mask")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("operator_settings")
+}
+
+/// Guest customer account (Google / Microsoft sign-in). Tenant-scoped,
+/// identity = (provider, provider_sub); tokens are opaque + hashed.
+model Customer {
+  id                  String    @id @default(cuid())
+  tenantId            String    @map("tenant_id")
+  provider            String
+  providerSub         String    @map("provider_sub")
+  email               String
+  name                String?
+  phone               String?
+  /// Last address this customer had food delivered to — same shape as
+  /// `Order.deliveryAddress` ({street, zip, city?, note?}). "Last used"
+  /// semantics: every delivery order overwrites it, so checkout can
+  /// prefill without the guest re-typing. Never a billing record.
+  lastDeliveryAddress Json?     @map("last_delivery_address")
+  /// Argon2id hash — only for provider "password" accounts (email sign-up);
+  /// OAuth customers keep null.
+  passwordHash        String?   @map("password_hash")
+  /// The account-level half of `Order.reviewClickedAt`: a signed-in
+  /// regular who already tapped the review link once is not asked again
+  /// from a later order. Set once by the tracked redirect, never cleared.
+  reviewClickedAt     DateTime? @map("review_clicked_at")
+  /// The guest's own language, as a `LOCALE_CODES` value ("de", "fr", …).
+  /// Follows the account rather than the handset: a regular who set the
+  /// app to French once gets French on their tablet too, and on a
+  /// reinstall. Null means "never chosen" — the app then falls back to
+  /// the VENUE's default locale, and only then to the device language.
+  locale              String?   @map("locale") @db.VarChar(8)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime? @map("deleted_at")
+
+  tenant           Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tokens           CustomerToken[]
+  orders           Order[]
+  loyaltyLedger    LoyaltyLedger[]
+  loyaltyVouchers  LoyaltyVoucher[]
+  reservations     Reservation[]
+  cateringRequests CateringRequest[]
+  orderIssues      OrderIssue[]
+  passwordResets   CustomerPasswordResetToken[]
+  giftCardsBought  GiftCard[]
+
+  @@unique([tenantId, provider, providerSub])
+  @@index([tenantId, email])
+  @@map("customers")
+}
+
+/// Every points movement, append-only. The customer's balance is the SUM
+/// of their deltas — there is no cached total to drift out of sync.
+///
+/// `reason` is a plain string (not an enum) so round two can add
+/// "refund"/"promo" without a migration on a hot table; the four the app
+/// writes today are "order" (earned), "reversal" (a cancelled order gives
+/// the points back), "voucher" (debited to mint a reward) and "adjust"
+/// (a human correction).
+///
+/// The unique on (order_id, reason) is the idempotency guarantee that
+/// makes earning safe on a path reached by webhooks, /pay/verify AND the
+/// dashboard reconcile: all three race, exactly one INSERT wins. Postgres
+/// treats NULLs as distinct, so voucher/adjust rows (order_id NULL) are
+/// unaffected.
+model LoyaltyLedger {
+  id         String  @id @default(cuid())
+  tenantId   String  @map("tenant_id")
+  customerId String  @map("customer_id")
+  orderId    String? @map("order_id")
+  /// The voucher this movement is about: the one the points bought
+  /// (`reason: "voucher"`) or the one that was spent (`reason: "redeem"`).
+  /// NULL for plain earning / reversal rows. Plain reference, no FK — same
+  /// posture as `loyalty_vouchers.redeemed_order_id`.
+  ///
+  /// It exists so a history line can quote the voucher's OWN value: a
+  /// client that derives "€20 reward used" from the venue's current
+  /// `rewardValueCents` starts lying the day the owner changes it.
+  voucherId  String? @map("voucher_id")
+  /// Signed: positive earns, negative spends.
+  delta      Int
+  reason     String
+
+  createdAt DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  order    Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@unique([orderId, reason])
+  @@index([tenantId, customerId])
+  @@map("loyalty_ledger")
+}
+
+/// One reward the guest has already earned: a free meal worth
+/// `valueCents`, bought with `pointsSpent` points.
+///
+/// `status` is a plain string for the same reason as the ledger's reason.
+/// "available" → the guest holds it; "armed" → they flagged it for their
+/// next order (round two reads this); "redeemed"/"expired"/"revoked" are
+/// terminal. Expiry is applied LAZILY on read rather than by a cron, so a
+/// voucher is never silently expired by a job nobody is watching.
+model LoyaltyVoucher {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  customerId      String    @map("customer_id")
+  valueCents      Int       @map("value_cents")
+  pointsSpent     Int       @map("points_spent")
+  status          String    @default("available")
+  expiresAt       DateTime  @map("expires_at")
+  armedAt         DateTime? @map("armed_at")
+  /// Set by round two when the voucher is actually spent. Plain reference.
+  redeemedOrderId String?   @map("redeemed_order_id")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, customerId])
+  @@map("loyalty_vouchers")
+}
+
+/// One sellable gift-card design. Three are seeded per venue; the owner
+/// renames, re-prices, re-images and re-orders them in Settings.
+///
+/// The name is deliberately NOT translated. The owner writes it in their
+/// own words ("Genussabend") and every locale shows that string verbatim
+/// — a machine translation of a product name the owner chose would be a
+/// worse answer in all six languages than the name itself.
+model GiftCardProduct {
+  id         String    @id @default(cuid())
+  tenantId   String    @map("tenant_id")
+  venueId    String    @map("venue_id")
+  name       String
+  priceCents Int       @map("price_cents")
+  /// Either a `media.storageKey` (owner upload, served by /img/[key]) or
+  /// one of the shipped defaults under /brand/gift-cards/ — told apart by
+  /// the leading slash. See `giftCardImageUrl()`.
+  imageKey   String?   @map("image_key")
+  active     Boolean   @default(true)
+  sortIndex  Int       @default(0) @map("sort_index")
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime? @map("deleted_at")
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  venue     Venue      @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  giftCards GiftCard[]
+
+  /// NOTE: the migration also creates a PARTIAL unique index on
+  /// (venue_id, sort_index) WHERE deleted_at IS NULL — a venue has
+  /// exactly three designs, at slots 0/1/2, and that constraint is what
+  /// makes seeding an idempotent `createMany(…, skipDuplicates)`. Prisma's
+  /// `@@unique` cannot express the WHERE clause, so declaring it here
+  /// would make the schema disagree with the database. Left SQL-only on
+  /// purpose; `skipDuplicates` emits an untargeted ON CONFLICT DO NOTHING
+  /// and honours it regardless.
+  @@index([tenantId, venueId])
+  @@map("gift_card_products")
+}
+
+/// One sold gift card.
+///
+/// A BEARER instrument: the `code` is the permission. That is why it is
+/// globally unique rather than unique-per-tenant (a cashier types a code,
+/// not a code plus a tenant), why it comes from a CSPRNG over an
+/// unambiguous alphabet (`src/lib/gift-card-code.ts`), and why
+/// `purchaserCustomerId` records provenance without conferring rights —
+/// the buyer's friend can spend it, which is the entire point.
+///
+/// Lifecycle: pending_payment → active → redeemed | expired | refunded.
+/// Expiry is applied LAZILY on read and redeem, never by a cron.
+model GiftCard {
+  id        String  @id @default(cuid())
+  tenantId  String  @map("tenant_id")
+  venueId   String  @map("venue_id")
+  /// Nullable so retiring a design never destroys the record of the
+  /// cards sold under it.
+  productId String? @map("product_id")
+  /// 12 Crockford-base32 characters, stored undashed and uppercase.
+  code      String  @unique
+
+  purchaserCustomerId String  @map("purchaser_customer_id")
+  recipientName       String? @map("recipient_name")
+  message             String?
+  valueCents          Int     @map("value_cents")
+  /// What the buyer was actually charged: `valueCents` less the purchase
+  /// discount (`giftCardChargeCents`). NULL on cards sold before the
+  /// discount existed — those were charged the full value.
+  paidCents           Int?    @map("paid_cents")
+  /// The buyer's contact number (E.164), required at purchase. NULL only
+  /// on cards sold before it was asked.
+  purchaserPhone      String? @map("purchaser_phone")
+  currency            String
+  status              String  @default("pending_payment")
+
+  paymentProvider String?   @map("payment_provider")
+  paymentRef      String?   @map("payment_ref")
+  paidAt          DateTime? @map("paid_at")
+  /// NULL until paid — an unpaid card has no clock running.
+  expiresAt       DateTime? @map("expires_at")
+  /// First time anyone opened the share link. Evidence the card reached
+  /// someone, for the timeline; never a permission.
+  sharedAt        DateTime? @map("shared_at")
+
+  redeemedAt       DateTime? @map("redeemed_at")
+  /// Exactly one of these is set on redemption: a staff user (counter) or
+  /// an order (spent in the app cart). Plain references, no FK.
+  redeemedByUserId String?   @map("redeemed_by_user_id")
+  redeemedOrderId  String?   @map("redeemed_order_id")
+  redeemedNote     String?   @map("redeemed_note")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  venue     Venue            @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  product   GiftCardProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  purchaser Customer         @relation(fields: [purchaserCustomerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, purchaserCustomerId])
+  @@index([tenantId, venueId, status])
+  @@index([paymentRef])
+  @@map("gift_cards")
+}
+
+model CustomerToken {
+  id         String    @id @default(cuid())
+  tenantId   String    @map("tenant_id")
+  customerId String    @map("customer_id")
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_tokens")
+}
+
+/// "I forgot my password" for a GUEST account (provider "password").
+/// Same primitive as `PasswordResetToken` for owners — random 32 bytes,
+/// stored SHA-256-hashed, single-use (`used_at`), TTL-bounded — but
+/// tenant-scoped, because a customer belongs to a tenant and every read
+/// of this table happens under RLS.
+model CustomerPasswordResetToken {
+  id         String    @id @default(cuid())
+  tenantId   String    @map("tenant_id")
+  customerId String    @map("customer_id")
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  usedAt     DateTime? @map("used_at")
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_password_reset_tokens")
+}
+
+enum ReservationStatus {
+  requested
+  confirmed
+  declined
+  cancelled
+  completed
+}
+
+/// Table reservation requested from the public menu. The restaurant
+/// confirms by phone — status starts at `requested`.
+model Reservation {
+  id         String            @id @default(cuid())
+  tenantId   String            @map("tenant_id")
+  venueId    String            @map("venue_id")
+  /// The signed-in guest who asked for the table, when there was one.
+  /// Nullable because reservations stay anonymous by default — the menu
+  /// dialog never demands an account — and SetNull because deleting an
+  /// account must not erase the restaurant's book for tonight.
+  customerId String?           @map("customer_id")
+  name       String
+  phone      String
+  guests     Int
+  /// The reserved instant (UTC); date/time keep the venue-local wall clock
+  /// the guest picked, immune to DST arithmetic on display.
+  at         DateTime
+  date       String
+  time       String
+  note       String?
+  status     ReservationStatus @default(requested)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? @map("deleted_at")
+
+  venue    Venue     @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, at])
+  @@index([tenantId, customerId])
+  @@map("reservations")
+}
+
+/// One line per order the owner deleted (2026-10-01): only cancelled
+/// orders on which no money moved can go, and this is what remains — the
+/// number, when, how much, who and why. Insert-only; also consulted by
+/// order numbering so a deleted number is never reused.
+model DeletedOrder {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  venueId       String   @map("venue_id")
+  orderNumber   Int      @map("order_number")
+  orderSeries   String?  @map("order_series")
+  orderType     String   @map("order_type")
+  paymentStatus String   @map("payment_status")
+  totalCents    Int      @map("total_cents")
+  currency      String
+  placedAt      DateTime @map("placed_at")
+  reason        String
+  /// The owner's login email at the time — a label, not a foreign key, so
+  /// the line survives the account.
+  deletedBy     String   @map("deleted_by")
+
+  createdAt DateTime @default(now())
+
+  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([venueId, orderNumber])
+  @@map("deleted_orders")
+}
+
+/// The restaurant app's bell: every staff notification, kept so the bell
+/// can count and list them. `need` = the team box that may see it.
+model StaffNotification {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  kind      String
+  need      String
+  title     String
+  body      String
+  data      Json?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("staff_notifications")
+}
+
+/// When each login last opened the bell — everything newer is unseen.
+model StaffNotificationSeen {
+  tenantId String   @map("tenant_id")
+  userId   String   @map("user_id")
+  seenAt   DateTime @map("seen_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, userId])
+  @@map("staff_notification_seen")
+}
+
+/// The order log (owner, 2026-10-14): one row per thing that came in for an
+/// order or happened to it, with the raw JSON. Append-only (the app role has
+/// no UPDATE/DELETE); `orderId` has no foreign key so the log outlives a
+/// deleted order; rows older than 6 months go via purge_order_events().
+model OrderEvent {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  venueId    String   @map("venue_id")
+  orderId    String   @map("order_id")
+  /// "O-5" at the time — the order may be gone later.
+  orderLabel String?  @map("order_label")
+  /// order.placed, payment.started, stripe.webhook, status.changed, …
+  kind       String
+  /// guest | restaurant:<email> | driver | stripe | paypal | system
+  actor      String
+  summary    String?
+  payload    Json?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("order_events")
+}
+
+/// A catering enquiry from the app: a party, a wedding, an office lunch
+/// the restaurant would cook for OFF the premises (or for a hall the
+/// guest names). Deliberately looser than a table reservation — any
+/// guest count, any date up to four months out, no opening-hours slot
+/// grid — because the restaurant plans the menu and the price with the
+/// guest by phone. The row is the lead; `status` records how that call
+/// went, with the same four words the reservation book uses.
+model CateringRequest {
+  id         String  @id @default(cuid())
+  tenantId   String  @map("tenant_id")
+  venueId    String  @map("venue_id")
+  /// The signed-in guest, when there was one — same rules as
+  /// `Reservation.customerId`: optional, and SetNull on account deletion.
+  customerId String? @map("customer_id")
+  name       String
+  phone      String
+  email      String?
+  guests     Int
+  /// Venue-local event date "YYYY-MM-DD"; the time is optional.
+  date       String
+  time       String?
+  /// Where the food goes — a hall, an office, a home address. Optional.
+  location   String?
+  message    String?
+  /// requested | confirmed | declined | cancelled (CHECK in the migration).
+  status     String  @default("requested")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? @map("deleted_at")
+
+  venue    Venue     @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, date])
+  @@map("catering_requests")
+}
+
+/// One complaint thread, one order. The guest opens it from the tracking
+/// page or the app ("report a problem"), the restaurant answers, and the
+/// pair of them keep talking in the same place until it is resolved.
+///
+/// `order_id` is UNIQUE on purpose: "my food was cold AND the drink was
+/// missing" is one conversation, not two tickets. Reporting IS creating
+/// the thread with its first message, so a thread never exists empty.
+///
+/// The three statuses are a conversation, not a workflow: a guest message
+/// makes it `open` (the restaurant owes an answer), a restaurant reply
+/// makes it `answered`, and only the restaurant may close it as
+/// `resolved` — after which the guest side is read-only but the
+/// restaurant may still add a note.
+///
+/// `customer_id` is SetNull, like reservations: deleting an account must
+/// not erase the complaint the restaurant handled.
+model OrderIssue {
+  id         String    @id @default(cuid())
+  tenantId   String    @map("tenant_id")
+  venueId    String    @map("venue_id")
+  orderId    String    @unique @map("order_id")
+  customerId String?   @map("customer_id")
+  /// open | answered | resolved — CHECK-constrained in the migration.
+  status     String    @default("open")
+  resolvedAt DateTime? @map("resolved_at")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  venue    Venue               @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  order    Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customer Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  messages OrderIssueMessage[]
+
+  @@index([tenantId])
+  @@index([tenantId, status, updatedAt])
+  @@map("order_issues")
+}
+
+/// One turn in the conversation. `author` says which side wrote it;
+/// `author_user_id` records WHICH member of the restaurant replied (plain
+/// reference, no FK — a departed staff account must not cascade a guest's
+/// complaint away).
+///
+/// At most one photo per message, stored through `image-storage` under
+/// `{tenantId}/issues/{uuid}` and served ONLY by the token-gated photo
+/// route — never by `/img`, which is public and immutable-cached.
+model OrderIssueMessage {
+  id           String  @id @default(cuid())
+  tenantId     String  @map("tenant_id")
+  issueId      String  @map("issue_id")
+  /// guest | restaurant — CHECK-constrained in the migration.
+  author       String
+  authorUserId String? @map("author_user_id")
+  body         String
+  photoKey     String? @map("photo_key")
+  photoType    String? @map("photo_type")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  issue  OrderIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([issueId, createdAt])
+  @@map("order_issue_messages")
+}
+
+/// One installation of the app that has asked to be told about new orders
+/// (P7-11). A row per DEVICE, not per person: the owner's phone and the
+/// counter tablet are two addresses and both should buzz.
+///
+/// `expoPushToken` is UNIQUE because the token IS the installation's
+/// identity — registering again is an upsert on it, and a handset that
+/// moves between accounts belongs to whoever registered it last.
+///
+/// `disabledAt` is stamped when Expo answers `DeviceNotRegistered` (app
+/// deleted, notification permission revoked, token rotated). The row stays
+/// so a later re-register revives the same address instead of leaving a
+/// second, silently-dead one behind.
+model StaffDevice {
+  id            String    @id @default(cuid())
+  tenantId      String    @map("tenant_id")
+  userId        String    @map("user_id")
+  expoPushToken String    @unique @map("expo_push_token")
+  /// ios | android | web — CHECK-constrained in the migration.
+  platform      String
+  /// Diagnostics only: when one build stops receiving, this answers "which
+  /// build?" without a support round-trip.
+  appVersion    String?   @map("app_version")
+  lastSeenAt    DateTime  @default(now()) @map("last_seen_at")
+  disabledAt    DateTime? @map("disabled_at")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, disabledAt])
+  @@index([userId])
+  @@map("staff_devices")
+}

@@ -1,0 +1,141 @@
+import { z } from "zod";
+
+/**
+ * Typed environment contract. Parsed once at module load so a missing or
+ * malformed variable fails fast at boot with a clear message, rather than
+ * surfacing as an undefined deep in a request. See .env.example for the contract.
+ */
+const envSchema = z.object({
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+
+  // App runtime DB connection. Single restaurant, RLS disabled: the
+  // app connects DIRECTLY to the (remote, in prod) Postgres as the
+  // owner role — no connection pooler in between.
+  APP_DATABASE_URL: z.string().url(),
+  // Migrations/admin URL. Prisma migrate + advisory locks + shadow DB
+  // read this (via prisma.config.ts). Points at the same Postgres as
+  // APP_DATABASE_URL; optional at app runtime.
+  DATABASE_URL: z.string().url().optional(),
+  // Optional read-replica URL (P2-12). When set, `readDb` in db.ts
+  // becomes a distinct PrismaClient pointing here; when unset, it is
+  // a reference-equal alias for the primary so dev + CI need only
+  // one Postgres. Public-menu + sitemap loaders read through this.
+  DATABASE_URL_READ: z.string().url().optional(),
+
+  REDIS_URL: z.string().url(),
+
+  // Error tracking — optional at boot; when unset, `captureException`
+  // still emits a structured stderr line but no upstream SDK call fires.
+  // Provisioned in P0-11 (Terraform).
+  SENTRY_DSN: z.string().url().optional(),
+
+  // HMAC key for signed httpOnly session cookies. 32 bytes minimum so the
+  // effective search space matches SHA-256's output. Rotate by re-signing
+  // (all sessions invalidated) or by adding key-id support later.
+  SESSION_SECRET: z.string().min(32),
+
+  // Public origin of the app — every absolute URL the product shows or
+  // encodes (QR codes, receipts, structured data, emails) derives from
+  // this. Dev default is localhost; production IaC sets the real domain.
+  APP_URL: z.string().url().default("http://localhost:3000"),
+
+  // Email adapter (P1-3). `mailhog` = local SMTP sink, `resend` = prod HTTPS
+  // API (needs RESEND_API_KEY), `console` = stdout for CI smoke.
+  EMAIL_TRANSPORT: z.enum(["mailhog", "resend", "console"]).default("mailhog"),
+  EMAIL_FROM: z.string().min(3).default("Resto <dev@example.local>"),
+  MAILHOG_SMTP_HOST: z.string().default("localhost"),
+  MAILHOG_SMTP_PORT: z.coerce.number().int().positive().default(1025),
+  MAILHOG_API_URL: z.string().url().default("http://localhost:8025"),
+  RESEND_API_KEY: z.string().min(1).optional(),
+
+  // Stripe (P1-19). Both optional so dev + test run on the fake provider;
+  // the real SDK wrapper boots only when *both* are set. Webhook secret
+  // doubles as the HMAC input for the fake so tests can sign payloads.
+  STRIPE_SECRET_KEY: z.string().min(1).optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
+  // Production registers TWO Dashboard webhook endpoints (your account +
+  // connected accounts) and each gets its OWN signing secret. Dev's
+  // `stripe listen` shares one secret for both, so this stays unset there.
+  STRIPE_CONNECT_WEBHOOK_SECRET: z.string().min(1).optional(),
+  // Public identifier, NOT a secret — it is safe in a client bundle and in
+  // an app binary. The mobile app's native PaymentSheet needs it alongside
+  // the PaymentIntent's client secret. We serve it from the intent endpoint
+  // rather than baking it into the app, so rotating the key (or switching
+  // Stripe accounts) never costs an app-store rebuild.
+  STRIPE_PUBLISHABLE_KEY: z.string().min(1).optional(),
+  // Apple Pay in a WEB browser (P7-13). Google Pay needs nothing beyond a
+  // live Stripe account, but Apple additionally requires the merchant
+  // domain to be verified — the association file served from
+  // /.well-known/ and the domain registered in the Stripe dashboard —
+  // which is a human step nobody can automate from here. Until that is
+  // done, an Apple Pay button would open a sheet that fails at
+  // confirmation, so the guest checkout hides it. Only the literal "true"
+  // turns it on; a stray "1" must not.
+  APPLE_PAY_WEB_ENABLED: z.enum(["true", "false"]).optional(),
+
+  // PayPal (restaurant's OWN business account — single-merchant checkout).
+  // Both optional so dev + test run on the fake provider; the real REST
+  // wrapper boots only when *both* are set. PAYPAL_ENV picks the endpoint.
+  PAYPAL_CLIENT_ID: z.string().min(1).optional(),
+  PAYPAL_CLIENT_SECRET: z.string().min(1).optional(),
+  PAYPAL_ENV: z.enum(["sandbox", "live"]).default("sandbox"),
+  // Webhook id of the endpoint registered in the PayPal app (deployment-
+  // wide fallback; a restaurant's own id from the dashboard wins). Without
+  // it /api/paypal/webhook rejects every delivery as not_configured and
+  // settlement relies on the return leg alone.
+  PAYPAL_WEBHOOK_ID: z.string().min(1).optional(),
+
+  // Customer sign-in (guest accounts). Each pair optional — a provider
+  // only shows on the login surfaces when BOTH its values are set. The
+  // dev fake provider covers local testing with no credentials at all.
+  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  // Native one-tap sign-in: the app sends a Google ID token, which is
+  // addressed to whichever OAuth client issued it (iOS / Android / the
+  // web client the app's SDK is configured with). Comma-separated; these
+  // are the accepted `aud` values for POST /api/auth/customer/google.
+  // Public identifiers, not secrets — but they must be OURS, or anyone's
+  // Google token would sign in. Human-provided (see prod.env.template).
+  GOOGLE_MOBILE_CLIENT_IDS: z.string().min(1).optional(),
+  // Sign in with Apple (iOS app): the accepted `aud` of Apple ID tokens —
+  // the app's bundle identifier(s), comma-separated. Public, not secret.
+  // Unset ⇒ the store build's own bundle id (customer-auth.ts).
+  APPLE_SIGNIN_CLIENT_IDS: z.string().min(1).optional(),
+  MICROSOFT_CLIENT_ID: z.string().min(1).optional(),
+  MICROSOFT_CLIENT_SECRET: z.string().min(1).optional(),
+
+  // Push notifications to the restaurant's phone (P7-11). We never talk to
+  // APNs/FCM: the server POSTs to Expo's push service, which holds the
+  // Apple key and the FCM service account (both uploaded to EAS by the
+  // owner — human-gated). Unset ⇒ the in-memory fake provider records
+  // sends and nothing leaves the process, which is exactly what dev, CI
+  // and a deployment without credentials should do. Only the literal
+  // "true" turns the real transport on; a stray "0" must not enable it.
+  EXPO_PUSH_ENABLED: z.enum(["true", "false"]).optional(),
+  // Optional bearer for the push API — required only once the Expo project
+  // has "enhanced security for push notifications" switched on.
+  EXPO_ACCESS_TOKEN: z.string().min(1).optional(),
+
+  // Google rating + review link (P7-14). Server-side secret for the Places
+  // API (New); the key is billable, so it stays human-gated and absent by
+  // default. Unset ⇒ the rating provider is an in-memory fake that never
+  // calls Google, so dev, CI and any un-keyed deployment simply show no
+  // rating rather than a wrong one. The venue's Place ID is an owner
+  // setting (venues.google_place_id), not an env var — a key without a
+  // Place ID, or a Place ID without a key, still means "no rating".
+  GOOGLE_PLACES_API_KEY: z.string().min(1).optional(),
+});
+
+function loadEnv() {
+  const parsed = envSchema.safeParse(process.env);
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((i) => `  - ${i.path.join(".") || "(root)"}: ${i.message}`)
+      .join("\n");
+    throw new Error(`Invalid environment configuration:\n${issues}`);
+  }
+  return parsed.data;
+}
+
+export type Env = z.infer<typeof envSchema>;
+export const env: Env = loadEnv();

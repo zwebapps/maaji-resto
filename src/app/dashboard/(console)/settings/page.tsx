@@ -1,0 +1,2179 @@
+import {
+  ETA_ACCEPT_MAX_SECONDS,
+  ETA_ACCEPT_MIN_SECONDS,
+  ETA_MAX_MINUTES,
+  ETA_MIN_MINUTES,
+  ETA_STEP_MINUTES,
+} from "@/lib/ordering-config";
+import { PasswordInput } from "@/components/password-input";
+import { BRAND } from "@/lib/brand";
+import { FlashMessage } from "@/components/flash-message";
+import { redirect } from "next/navigation";
+import {
+  getGiftCardSettings,
+  getLoyaltySettings,
+  getOrderingSettings,
+  getVenueAppLinks,
+  getVenueContact,
+  getVenueGoogle,
+  getVenueHours,
+  getVenueForUser,
+  SUPPORTED_CURRENCIES,
+  SUPPORTED_LOCALES,
+} from "@/lib/venue-service";
+import { PLAN_LABELS } from "@/lib/plan-state";
+import {
+  GIFT_CARD_RECOMMENDED_EXPIRY_MONTHS,
+  GIFT_CARD_RISKY_EXPIRY_BELOW_MONTHS,
+  isRiskyExpiry,
+} from "@/lib/gift-card-config";
+import { listGiftCardProducts } from "@/lib/gift-card-service";
+import { MAX_NOTIFY_EMAILS, PAYMENT_METHODS } from "@/lib/ordering-config";
+import { MAX_APP_LINK_LENGTH } from "@/lib/app-links-config";
+import { WEEKDAYS, WEEKDAY_LABELS, formatDay } from "@/lib/opening-hours";
+import { uploadedImageUrl } from "@/lib/menu-images";
+import {
+  MAX_HERO_SLIDES,
+  builtInLabel,
+  heroSlideKind,
+  heroSlideUrl,
+  unusedBuiltInSlides,
+} from "@/lib/hero-slides";
+import { siteUrl } from "@/lib/public-menu";
+import { DeliveryAreasEditor } from "./delivery-areas-editor";
+import type { PlaceSuggestion } from "@/lib/google-rating";
+import { OWNER_PASSWORD_MIN_LENGTH } from "@/lib/auth-service";
+import {
+  addBuiltInSlideAction,
+  addHeroBannerAction,
+  addHeroSlideAction,
+  changePasswordAction,
+  moveHeroSlideAction,
+  removeHeroSlideAction,
+  clearGoogleManualRatingAction,
+  refreshGoogleRatingAction,
+  saveAppLinksAction,
+  removeBannerAction,
+  removeLogoAction,
+  saveBannerAction,
+  saveContactAction,
+  removeGiftCardImageAction,
+  saveGiftCardProductAction,
+  saveGiftCardsAction,
+  saveGoogleAction,
+  saveGoogleManualRatingAction,
+  saveGoogleRatingEnabledAction,
+  searchGooglePlaceAction,
+  saveHalalAction,
+  saveLocalizationAction,
+  saveHoursAction,
+  saveLogoAction,
+  saveLoyaltyAction,
+  saveOrderingAction,
+  saveVenueNameAction,
+} from "./actions";
+import { SubmitButton } from "@/components/submit-button";
+import { RequiredLegend, RequiredMark } from "@/components/required-mark";
+import { requirePermission } from "@/lib/team-access";
+
+/**
+ * Venue settings: name, logo, currency, and menu languages. Every form is
+ * plain multipart/POST via server actions — no JS required. Success and
+ * error banners are section-specific so the owner knows exactly what
+ * saved.
+ */
+
+/** A slide as the app draws it: a dish contained on the red hero
+ *  backdrop, a banner filling a wide box. */
+function SlidePreview({
+  src,
+  alt,
+  banner = false,
+}: {
+  src: string;
+  alt: string;
+  banner?: boolean;
+}): React.ReactElement {
+  if (banner) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt={alt}
+        className="h-16 w-32 shrink-0 border border-ink/15 bg-[#7a1f1f] object-contain"
+      />
+    );
+  }
+  return (
+    <span
+      className="flex h-16 w-16 shrink-0 items-center justify-center border border-ink/15 bg-[#7a1f1f] bg-cover bg-center p-1"
+      style={{ backgroundImage: "url(/app-slider/backdrop.webp)" }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={alt} className="max-h-full max-w-full object-contain" />
+    </span>
+  );
+}
+
+const MESSAGES: Record<string, { saved?: string; error?: string }> = {
+  name: {
+    saved: "Name saved. It shows everywhere — menu, QR page, and this dashboard.",
+    error: "The name can't be empty. Enter a name up to 120 characters.",
+  },
+  logo: {
+    saved: "Logo saved. Guests see it at the top of your menu.",
+    error: "That logo didn't save. Use a JPEG, PNG, or WebP up to 10 MB.",
+  },
+  "logo-removed": {
+    saved: `Logo removed. Your menu shows the ${BRAND.name} mark until you upload a new one.`,
+    error: "Couldn't remove the logo — try again.",
+  },
+  banner: {
+    saved: "Banner saved. Guests see it across the top of your menu.",
+    error: "That banner didn't save. Use a JPEG, PNG, or WebP up to 10 MB.",
+  },
+  "banner-removed": {
+    saved: "Banner removed. Your menu shows without a hero image.",
+    error: "Couldn't remove the banner — try again.",
+  },
+  slide: {
+    saved: "Slide added. The app shows it the next time its home screen refreshes.",
+    error: "That image didn't upload. Use a JPEG, PNG, or WebP up to 10 MB.",
+  },
+  /** The built-in picker. Its failure is never a bad upload — it is a
+   *  name that is not in the catalogue, which only a tampered form can
+   *  produce. */
+  "slide-builtin": {
+    saved: "Poster added. The app shows it the next time its home screen refreshes.",
+    error: "That isn't one of the built-in posters — pick one from the list and try again.",
+  },
+  "slide-full": {
+    error: `The slider is full (${MAX_HERO_SLIDES} slides). Remove one before adding another.`,
+  },
+  "slide-removed": {
+    saved: "Slide removed from the app's home slider.",
+    error: "Couldn't remove that slide — try again.",
+  },
+  "slide-moved": {
+    saved: "Slide order saved.",
+    error: "Couldn't move that slide — try again.",
+  },
+  hours: {
+    saved: "Opening hours saved. Guests see your open/closed status live on the menu.",
+    error: "Couldn't save opening hours — check the times and try again.",
+  },
+  ordering: {
+    saved: "Ordering settings saved. Guests see the new options immediately.",
+    error: "Couldn't save ordering settings — check the delivery values and try again.",
+  },
+  loyalty: {
+    saved: "Loyalty saved. Guests see the points line on the cart as soon as it's switched on.",
+    error: "Couldn't save loyalty — check the points and amounts and try again.",
+  },
+  halal: {
+    saved: "Saved. The Halal filter and badge now match your choice on the public menu.",
+    error: "Couldn't save the Halal setting — try again.",
+  },
+  // Gift cards. The switch and the three designs save separately, so each
+  // says which of the two took — an owner who has just uploaded a picture
+  // shouldn't have to guess whether the price went with it.
+  giftcards: {
+    saved: "Gift cards saved. Guests see the change the next time they open the app.",
+    error: "Couldn't save gift cards — check how long cards stay valid and try again.",
+  },
+  "giftcard-product": {
+    saved: "Design saved. Cards bought from now on carry the new name, price and picture.",
+    error: "Couldn't save that design. Give it a name and a price above €0.00 — then try again.",
+  },
+  "giftcard-image": {
+    error: "That picture didn't save. Use a JPEG, PNG, or WebP up to 10 MB.",
+  },
+  "giftcard-image-removed": {
+    saved: "Picture removed. That design shows without artwork until you upload a new one.",
+    error: "Couldn't remove the picture — try again.",
+  },
+  // Contact numbers. One success line, and a refusal per box — an owner
+  // who mistyped one number needs to know WHICH one, not that "something"
+  // was wrong with a card holding three.
+  contact: {
+    saved: "Contact details saved. Guests can call or e-mail you straight from the menu.",
+  },
+  contact_landline: {
+    error:
+      "That landline doesn't look like a phone number. Use digits only — 07531 123456 or +49 7531 123456 — or empty the box to hide it.",
+  },
+  contact_mobile: {
+    error:
+      "That mobile doesn't look like a phone number. Use digits only — 0170 1234567 or +49 170 1234567 — or empty the box to hide it.",
+  },
+  contact_whatsapp: {
+    error:
+      "That WhatsApp number doesn't look like a phone number. Use the number as it is registered with WhatsApp, or empty the box to hide it.",
+  },
+  contact_email: {
+    error:
+      "That doesn't look like an e-mail address. Write it in full — info@your-restaurant.de — or empty the box to hide it.",
+  },
+  contact_invalid: {
+    error: "Couldn't save your contact details — check both boxes and try again.",
+  },
+  // "Get the app". Same shape as the contact card: one success line, and a
+  // refusal per box that names the link that was refused — pasting the Play
+  // listing into the Apple box is the mistake this card exists to catch.
+  app: {
+    saved: "App links saved. Guests see them in the menu footer, and in the header once set.",
+  },
+  app_ios: {
+    error:
+      "That isn't an App Store link. Copy the address of your app's page on the App Store — it starts with https://apps.apple.com/ — or empty the box to hide the badge.",
+  },
+  app_android: {
+    error:
+      "That isn't a Google Play link. Copy the address of your app's page on Google Play — it starts with https://play.google.com/ — or empty the box to hide the badge.",
+  },
+  app_apk: {
+    error:
+      "That isn't a usable download link. Paste the full https:// address of the .apk file you host, or empty the box to hide the button.",
+  },
+  app_invalid: {
+    error: "Couldn't save your app links — check the three addresses and try again.",
+  },
+  google: {
+    saved:
+      "Google Place ID saved. Your rating appears under your name once it's been read — usually the next time a guest opens the menu.",
+    error:
+      "That doesn't look like a Google Place ID. Copy it from Google's Place ID finder, or leave the field empty to show no rating.",
+  },
+  // Google lookup outcomes (P7-14). Each one names the thing that is
+  // actually wrong AND who can fix it — an owner reading "it didn't work"
+  // has no way to tell a missing server key from a typo'd restaurant name.
+  google_refreshed: {
+    saved: "Rating refreshed from Google. The new number is on your menu right away.",
+  },
+  google_no_api_key: {
+    error:
+      "GOOGLE_PLACES_API_KEY is not set on the server (prod.env) — after adding it, recreate the app container (docker compose up -d).",
+  },
+  google_api_not_enabled: {
+    error:
+      "Places API (New) is not enabled for this key's Google Cloud project. Enable it in the Cloud console, then try again.",
+  },
+  google_key_invalid: {
+    error:
+      "Google rejected the API key. Check GOOGLE_PLACES_API_KEY and any restrictions set on it in the Cloud console.",
+  },
+  google_quota: {
+    error: "Google quota exceeded — try later.",
+  },
+  google_not_found: {
+    error:
+      "No place found for that search. Try the restaurant name with the street or city, exactly as it appears on Google Maps.",
+  },
+  google_network: {
+    error: "Couldn't reach Google just now. Try again in a moment.",
+  },
+  google_unknown: {
+    error: "Google's answer wasn't one we understood. Try again, or check the server logs.",
+  },
+  google_no_place_id: {
+    error: "Save a Google Place ID first — there's nothing to refresh yet.",
+  },
+  google_rate_limited: {
+    error: "Too many Google lookups from here. Wait a few minutes and try again.",
+  },
+  google_manual: {
+    saved: "Rating saved. Guests see it under your restaurant name right away.",
+    error:
+      "Enter a rating between 1.0 and 5.0 (one decimal, e.g. 4.7) and a whole number of reviews — or leave both empty to show nothing.",
+  },
+  google_rating_visibility: {
+    saved: "Saved. Your menu now matches whether the star line should be shown.",
+    error: "Couldn't change the rating's visibility — try again.",
+  },
+  google_manual_cleared: {
+    saved: "Rating removed. Your menu shows no star line until you enter one again.",
+    error: "Couldn't remove the rating — try again.",
+  },
+  localization: {
+    saved:
+      "Currency and languages saved. Prices on the draft use the new currency — publish to show guests.",
+    error: "Pick a currency, at least one language, and a default from the enabled languages.",
+  },
+  // Your own password. One success line, and a refusal per reason — "that
+  // didn't work" in front of three password boxes is the least useful
+  // thing a form can say, and the reasons here are all things the owner
+  // can act on without support.
+  password: {
+    saved: "Password changed. Other devices have been signed out — this one stays open.",
+  },
+  password_wrong_password: {
+    error:
+      "That isn't your current password. Type the password you use to sign in today, then the new one twice.",
+  },
+  password_mismatch: {
+    error: "The two new passwords don't match. Type the new password again in both boxes.",
+  },
+  password_too_short: {
+    error: `Your new password needs at least ${OWNER_PASSWORD_MIN_LENGTH} characters. A short sentence you'll remember beats a short scramble you won't.`,
+  },
+  password_same_as_current: {
+    error: "That's the password you already have. Choose a different one.",
+  },
+  password_rate_limited: {
+    error: "Too many password attempts from here. Wait an hour and try again.",
+  },
+};
+
+/**
+ * Terms offered for a gift card's life, in months. 36 leads because it
+ * matches the statutory limitation period (§ 195 BGB) a German court
+ * would apply to a PAID voucher anyway; the shorter ones are here because
+ * some owners will want them, and the hint under the box says plainly
+ * what they are taking on.
+ */
+const GIFT_CARD_EXPIRY_TERMS = [6, 12, 24, 36, 48, 60] as const;
+
+function giftCardTermLabel(months: number): string {
+  const years = months / 12;
+  const base =
+    Number.isInteger(years) && years >= 1
+      ? `${years} ${years === 1 ? "year" : "years"} (${months} months)`
+      : `${months} months`;
+  return months === GIFT_CARD_RECOMMENDED_EXPIRY_MONTHS ? `${base} — recommended` : base;
+}
+
+/**
+ * The Place ID search results, handed back through the redirect URL (the
+ * only place a zero-JS form round-trip can carry them). Everything here
+ * arrived in a query string the owner could have typed themselves, so the
+ * shape is re-checked and the list re-capped on the way in; React escapes
+ * the text itself.
+ */
+function parsePlaceSuggestions(raw: string | undefined): PlaceSuggestion[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (p): p is PlaceSuggestion =>
+          !!p &&
+          typeof p === "object" &&
+          typeof (p as PlaceSuggestion).id === "string" &&
+          (p as PlaceSuggestion).id.length > 0,
+      )
+      .slice(0, 5)
+      .map((p) => ({
+        id: p.id.slice(0, 255),
+        name: String(p.name ?? "").slice(0, 160),
+        address: String(p.address ?? "").slice(0, 160),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    saved?: string;
+    error?: string;
+    google_search?: string;
+    google_q?: string;
+  }>;
+}): Promise<React.ReactElement> {
+  const userId = await requirePermission("settings");
+
+  const venueResult = await getVenueForUser(userId);
+  if (!venueResult.ok) redirect("/dashboard");
+  const venue = venueResult.value;
+  const slides = venue.branding.heroSlides ?? [];
+  /** Built-in posters this slider is not already carrying — the picker. */
+  const spare = unusedBuiltInSlides(slides);
+  const orderingResult = await getOrderingSettings(userId);
+  const hoursResult = await getVenueHours(userId);
+  const venueHours = hoursResult.ok ? hoursResult.value : null;
+  const ordering = orderingResult.ok ? orderingResult.value : null;
+  const loyaltyResult = await getLoyaltySettings(userId);
+  const loyalty = loyaltyResult.ok ? loyaltyResult.value : null;
+  const giftCardResult = await getGiftCardSettings(userId);
+  const giftCards = giftCardResult.ok ? giftCardResult.value : null;
+  // Reading the products seeds the three shipped designs on a venue that
+  // has never sold a card, so the editor below is never an empty box.
+  const giftCardProducts = giftCards ? await listGiftCardProducts(venue.tenantId, venue.id) : [];
+  // A term saved before this list existed (or typed into the JSON by hand)
+  // has to appear in the select, or the browser would silently show the
+  // first option and the next save would change a setting nobody touched.
+  const giftCardTerms = giftCards
+    ? Array.from(new Set([...GIFT_CARD_EXPIRY_TERMS, giftCards.expiryMonths])).sort((a, b) => a - b)
+    : [];
+  const googleResult = await getVenueGoogle(userId);
+  const google = googleResult.ok ? googleResult.value : null;
+  const appLinksResult = await getVenueAppLinks(userId);
+  // Raw URLs in the boxes — what the owner sees is what is stored, so
+  // saving an untouched form is a no-op.
+  const appLinks = appLinksResult.ok ? appLinksResult.value : null;
+  const contactResult = await getVenueContact(userId);
+  // Raw E.164 in the boxes, not the grouped display string: what the owner
+  // sees is what is stored, so saving an untouched form is a no-op.
+  const contact = contactResult.ok ? contactResult.value : null;
+  // Same fixed dashboard locale + zone as the overview's timestamps: this
+  // console is English and runs the restaurant's clock, not the browser's.
+  const googleRefreshedLabel = google?.rating
+    ? new Intl.DateTimeFormat("en-GB", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "Europe/Berlin",
+      }).format(new Date(google.rating.fetchedAt))
+    : null;
+  const { saved, error, google_search: googleSearch, google_q: googleQuery } = await searchParams;
+  const placeSuggestions = parsePlaceSuggestions(googleSearch);
+  // Prefill the search box with what the owner would have typed anyway.
+  // The venue row carries a name but no address, so the name is the whole
+  // prefill — the helper text asks for the town, which is what actually
+  // disambiguates two restaurants with the same name.
+  const placeQuery = googleQuery ?? venue.name;
+
+  const banner = saved
+    ? { kind: "saved" as const, text: MESSAGES[saved]?.saved }
+    : error
+      ? { kind: "error" as const, text: MESSAGES[error]?.error }
+      : null;
+
+  // The password card is the LAST thing on a long page, and the flash
+  // popup lives at the top of it. Repeating the same sentence inside the
+  // card — in a live region, so it is announced as well as seen — means
+  // the owner reads the answer where they typed the question.
+  const passwordNotice =
+    saved === "password"
+      ? { kind: "saved" as const, text: MESSAGES.password?.saved }
+      : error?.startsWith("password")
+        ? { kind: "error" as const, text: MESSAGES[error]?.error }
+        : null;
+
+  return (
+    <main className="mx-auto min-h-screen max-w-4xl px-4 py-8 text-ink sm:px-6 md:py-12 lg:px-10">
+      <p className="mb-2 text-xs uppercase tracking-[0.28em] text-gold-dark">Settings</p>
+      <h1 className="font-serif text-4xl leading-tight">Restaurant details</h1>
+
+      {banner?.text ? (
+        <FlashMessage kind={banner.kind === "error" ? "error" : "success"} text={banner.text} />
+      ) : null}
+
+      {/* Name */}
+      <form action={saveVenueNameAction} className="mt-10 border border-ink/15 bg-card px-6 py-5">
+        <label className="block text-sm">
+          <span className="font-medium">
+            Restaurant name
+            <RequiredMark />
+          </span>
+          <input
+            type="text"
+            name="name"
+            required
+            maxLength={120}
+            defaultValue={venue.name}
+            className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-base outline-none focus:border-ink"
+          />
+        </label>
+        <p className="mt-2 text-xs text-muted">
+          Shown at the top of your public menu and inside this dashboard.
+        </p>
+        <RequiredLegend />
+        <SubmitButton
+          pendingLabel="Saving…"
+          className="mt-4 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+        >
+          Save name
+        </SubmitButton>
+      </form>
+
+      {/* Logo */}
+      <section aria-label="Logo" className="mt-6 border border-ink/15 bg-card px-6 py-5">
+        <p className="text-sm font-medium">Logo</p>
+        <div className="mt-3 flex items-start gap-5">
+          {venue.branding.logoKey ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={uploadedImageUrl(venue.branding.logoKey, 160)}
+              alt={`${venue.name} logo`}
+              className="h-20 w-20 shrink-0 rounded-full border border-ink/15 bg-white object-contain p-1"
+            />
+          ) : (
+            <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-dashed border-ink/20 text-center text-[10px] uppercase leading-tight text-muted">
+              no logo yet
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="text-xs text-muted">
+              Shown next to your restaurant name at the top of the public menu. Square images look
+              best. JPEG, PNG, or WebP up to 10&nbsp;MB.
+            </p>
+            <form action={saveLogoAction} className="mt-3">
+              <label className="block text-sm">
+                <span className="font-medium">
+                  Image file
+                  <RequiredMark />
+                </span>
+                <input
+                  type="file"
+                  name="logo"
+                  required
+                  accept="image/jpeg,image/png,image/webp"
+                  className="mt-1 block w-full text-sm file:mr-3 file:border file:border-ink/30 file:bg-cream file:px-3 file:py-1.5 file:text-xs file:uppercase file:tracking-wider"
+                />
+              </label>
+              <RequiredLegend className="mt-1 text-xs text-muted" />
+              <SubmitButton
+                pendingLabel="Uploading…"
+                className="mt-3 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+              >
+                Upload logo
+              </SubmitButton>
+            </form>
+            {venue.branding.logoKey ? (
+              <form action={removeLogoAction} className="mt-2">
+                <SubmitButton
+                  pendingLabel="Removing…"
+                  className="text-xs text-red-800 underline underline-offset-2 hover:text-red-900"
+                >
+                  Remove logo
+                </SubmitButton>
+              </form>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      {/* Banner */}
+      <section aria-label="Banner" className="mt-6 border border-ink/15 bg-card px-6 py-5">
+        <p className="text-sm font-medium">Top banner</p>
+        <div className="mt-3 flex items-start gap-5">
+          {venue.branding.bannerKey ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={uploadedImageUrl(venue.branding.bannerKey, 480)}
+              alt={`${venue.name} banner`}
+              className="h-20 w-40 shrink-0 border border-ink/15 bg-white object-cover"
+            />
+          ) : (
+            <span className="flex h-20 w-40 shrink-0 items-center justify-center border border-dashed border-ink/20 text-center text-[10px] uppercase leading-tight text-muted">
+              no banner yet
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="text-xs text-muted">
+              A wide hero image shown across the top of your public menu — your dining room, a
+              signature dish, your storefront. JPEG, PNG, or WebP up to 10&nbsp;MB.
+            </p>
+            <p className="mt-1 text-xs font-medium text-ink">
+              Recommended size: <strong>1600 × 240 pixels</strong> (wide banner strip). The image
+              fills the full width and is cropped to fit each screen — keep text and logos near the{" "}
+              <em>centre</em>, since phones show the middle part only.
+            </p>
+            <form action={saveBannerAction} className="mt-3">
+              <label className="block text-sm">
+                <span className="font-medium">
+                  Image file
+                  <RequiredMark />
+                </span>
+                <input
+                  type="file"
+                  name="banner"
+                  required
+                  accept="image/jpeg,image/png,image/webp"
+                  className="mt-1 block w-full text-sm file:mr-3 file:border file:border-ink/30 file:bg-cream file:px-3 file:py-1.5 file:text-xs file:uppercase file:tracking-wider"
+                />
+              </label>
+              <RequiredLegend className="mt-1 text-xs text-muted" />
+              <SubmitButton
+                pendingLabel="Uploading…"
+                className="mt-3 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+              >
+                Upload banner
+              </SubmitButton>
+            </form>
+            {venue.branding.bannerKey ? (
+              <form action={removeBannerAction} className="mt-2">
+                <SubmitButton
+                  pendingLabel="Removing…"
+                  className="text-xs text-red-800 underline underline-offset-2 hover:text-red-900"
+                >
+                  Remove banner
+                </SubmitButton>
+              </form>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      {/* App home slider. The posters that rotate at the top of the mobile
+          app's home screen. Empty = no slider at all, just the app's plain
+          red welcome hero. */}
+      <section
+        aria-labelledby="slider-title"
+        className="mt-6 border border-ink/15 bg-card px-6 py-5"
+      >
+        <p id="slider-title" className="text-sm font-medium">
+          App home slider
+        </p>
+        <p className="mt-1 text-xs text-muted">
+          The posters that rotate at the top of the app&apos;s home screen, in this order — up to{" "}
+          {MAX_HERO_SLIDES}. The restaurant&apos;s own German posters are built in and listed below;
+          keep, reorder or remove any of them, add one back from the picker, or upload your own.
+        </p>
+        <ul className="mt-1 list-disc pl-5 text-xs text-ink">
+          <li>
+            <strong>Banner:</strong> a wide poster, <strong>2 : 1</strong> (e.g. 1600 × 800 px). It
+            is shown whole, so keep the text large. Stored at max 1600&nbsp;px; phones download
+            ~100–150&nbsp;KB.
+          </li>
+          <li>
+            <strong>Dish:</strong> the older look — a PNG with a{" "}
+            <strong>transparent background</strong> (just the plate, about 700 × 700 px), shown on
+            the red hero next to the welcome line. Stored at max 800&nbsp;px.
+          </li>
+        </ul>
+
+        {slides.length > 0 ? (
+          <ol className="mt-4 grid gap-3 sm:grid-cols-2">
+            {slides.map((key, i) => (
+              <li
+                key={key}
+                className="flex items-center gap-3 border border-ink/15 bg-cream/40 p-2"
+              >
+                <span className="w-5 shrink-0 text-center text-xs font-medium text-muted">
+                  {i + 1}
+                </span>
+                <SlidePreview
+                  src={heroSlideUrl(key, heroSlideKind(key) === "banner" ? 320 : 240)}
+                  alt={builtInLabel(key) ?? `Slide ${i + 1}`}
+                  banner={heroSlideKind(key) === "banner"}
+                />
+                <span className="shrink-0 text-[10px] uppercase leading-tight tracking-wider text-muted">
+                  {heroSlideKind(key) === "banner" ? "Banner" : "Dish"}
+                  {builtInLabel(key) ? (
+                    <>
+                      <br />
+                      Built-in
+                    </>
+                  ) : null}
+                </span>
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+                  <form action={moveHeroSlideAction}>
+                    <input type="hidden" name="key" value={key} />
+                    <input type="hidden" name="dir" value="up" />
+                    <SubmitButton
+                      pendingLabel="…"
+                      disabled={i === 0}
+                      aria-label={`Move slide ${i + 1} earlier`}
+                      className="min-h-8 min-w-8 border border-ink/25 px-2 text-sm hover:bg-cream disabled:opacity-30"
+                    >
+                      ↑
+                    </SubmitButton>
+                  </form>
+                  <form action={moveHeroSlideAction}>
+                    <input type="hidden" name="key" value={key} />
+                    <input type="hidden" name="dir" value="down" />
+                    <SubmitButton
+                      pendingLabel="…"
+                      disabled={i === slides.length - 1}
+                      aria-label={`Move slide ${i + 1} later`}
+                      className="min-h-8 min-w-8 border border-ink/25 px-2 text-sm hover:bg-cream disabled:opacity-30"
+                    >
+                      ↓
+                    </SubmitButton>
+                  </form>
+                  <form action={removeHeroSlideAction}>
+                    <input type="hidden" name="key" value={key} />
+                    <SubmitButton
+                      pendingLabel="Removing…"
+                      aria-label={`Remove slide ${i + 1}`}
+                      className="text-xs text-red-800 underline underline-offset-2 hover:text-red-900"
+                    >
+                      Remove
+                    </SubmitButton>
+                  </form>
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <div className="mt-4 border border-dashed border-ink/20 px-4 py-3">
+            <p className="text-xs text-muted">
+              You removed every slide, so the app&apos;s home screen shows the plain red welcome
+              hero — no poster, and nothing to download. Add a built-in poster back below, or upload
+              your own.
+            </p>
+          </div>
+        )}
+
+        {slides.length < MAX_HERO_SLIDES && spare.length > 0 ? (
+          /* The way back to a built-in poster. The defaults only seed a
+             venue that never touched its slider, so without this the
+             catalogue would be write-once: remove a poster (or ship a new
+             one after an owner has already arranged their slider) and
+             nobody could put it in place. */
+          <form action={addBuiltInSlideAction} className="mt-4 flex flex-wrap items-end gap-3">
+            <label className="block text-sm">
+              <span className="font-medium">Add a built-in poster</span>
+              <select
+                name="name"
+                defaultValue={spare[0]!.name}
+                className="mt-1 block min-w-64 border border-ink/25 bg-card px-3 py-2 text-sm"
+              >
+                {spare.map((b) => (
+                  <option key={b.name} value={b.name}>
+                    {b.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <SubmitButton
+              pendingLabel="Adding…"
+              className="bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+            >
+              Add poster
+            </SubmitButton>
+          </form>
+        ) : null}
+
+        {slides.length < MAX_HERO_SLIDES ? (
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <form action={addHeroSlideAction}>
+              <label className="block text-sm">
+                <span className="font-medium">
+                  Add a dish
+                  <RequiredMark />
+                </span>
+                <input
+                  type="file"
+                  name="slide"
+                  required
+                  accept="image/png,image/webp,image/jpeg"
+                  className="mt-1 block w-full text-sm file:mr-3 file:border file:border-ink/30 file:bg-cream file:px-3 file:py-1.5 file:text-xs file:uppercase file:tracking-wider"
+                />
+              </label>
+              <SubmitButton
+                pendingLabel="Uploading…"
+                className="mt-3 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+              >
+                Add dish
+              </SubmitButton>
+            </form>
+            <form action={addHeroBannerAction}>
+              <label className="block text-sm">
+                <span className="font-medium">
+                  Add a banner
+                  <RequiredMark />
+                </span>
+                <input
+                  type="file"
+                  name="slideBanner"
+                  required
+                  accept="image/png,image/webp,image/jpeg"
+                  className="mt-1 block w-full text-sm file:mr-3 file:border file:border-ink/30 file:bg-cream file:px-3 file:py-1.5 file:text-xs file:uppercase file:tracking-wider"
+                />
+              </label>
+              <SubmitButton
+                pendingLabel="Uploading…"
+                className="mt-3 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+              >
+                Add banner
+              </SubmitButton>
+            </form>
+            <RequiredLegend className="text-xs text-muted sm:col-span-2" />
+          </div>
+        ) : (
+          <p className="mt-4 text-xs text-muted">
+            The slider is full ({MAX_HERO_SLIDES} slides). Remove one to add another.
+          </p>
+        )}
+      </section>
+
+      {/* Contact. One form, two boxes (landline + e-mail): they are one decision ("how can a
+          guest reach us?") and posting them together means an owner who
+          fixes a typo in one never has to re-enter the others. */}
+      <form action={saveContactAction} className="mt-6 border border-ink/15 bg-card px-6 py-5">
+        <p className="text-sm font-medium">Contact</p>
+        <p className="mt-1 text-xs text-muted">
+          Guests see these on their account page and in the app; leave a field empty to hide it.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <label className="block text-sm">
+            <span className="font-medium">Landline</span>
+            <input
+              type="tel"
+              name="landline"
+              inputMode="tel"
+              autoComplete="off"
+              maxLength={32}
+              defaultValue={contact?.landline ?? ""}
+              placeholder="07531 123456"
+              className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="font-medium">E-Mail</span>
+            <input
+              type="email"
+              name="email"
+              inputMode="email"
+              autoComplete="email"
+              maxLength={120}
+              defaultValue={contact?.email ?? ""}
+              placeholder="info@your-restaurant.de"
+              className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+            />
+          </label>
+        </div>
+        <label className="mt-4 block text-sm">
+          <span className="font-medium">Address</span>
+          <span className="mt-0.5 block text-xs text-muted">
+            Shown in the footer of the order e-mail guests receive. Two lines, e.g. street and
+            postcode + town.
+          </span>
+          <textarea
+            name="address"
+            rows={2}
+            maxLength={200}
+            autoComplete="street-address"
+            defaultValue={contact?.address ?? ""}
+            placeholder={"Fritz-Arnold-Str. 7\n78467 Konstanz"}
+            className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+          />
+        </label>
+        <p className="mt-2 text-xs text-muted">
+          A German number can be typed either way — 07531 123456 or +49 7531 123456. Numbers are
+          saved in international form so calling works from abroad too.
+        </p>
+        <SubmitButton
+          pendingLabel="Saving…"
+          className="mt-4 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+        >
+          Save contact
+        </SubmitButton>
+      </form>
+
+      {/* "Get the app" — App Store, Google Play, direct APK. One form,
+          three boxes: they are one decision ("can a guest get our app?"),
+          and every box left empty simply hides its own button. */}
+      <form
+        id="app-links"
+        action={saveAppLinksAction}
+        className="mt-6 scroll-mt-24 border border-ink/15 bg-card px-6 py-5"
+      >
+        <p className="text-sm font-medium">App</p>
+        <p className="mt-1 text-xs text-muted">
+          Shown in the website footer and header once set, and where the app QR code (QR codes page)
+          sends each phone. Leave empty to hide.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <label className="block text-sm">
+            <span className="font-medium">App Store (iOS)</span>
+            <input
+              type="url"
+              name="appIos"
+              inputMode="url"
+              autoComplete="off"
+              maxLength={MAX_APP_LINK_LENGTH}
+              defaultValue={appLinks?.ios ?? ""}
+              placeholder="https://apps.apple.com/de/app/…"
+              className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="font-medium">Google Play (Android)</span>
+            <input
+              type="url"
+              name="appAndroid"
+              inputMode="url"
+              autoComplete="off"
+              maxLength={MAX_APP_LINK_LENGTH}
+              defaultValue={appLinks?.android ?? ""}
+              placeholder="https://play.google.com/store/apps/details?id=…"
+              className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="font-medium">Android .apk file</span>
+            <input
+              type="url"
+              name="appApk"
+              inputMode="url"
+              autoComplete="off"
+              maxLength={MAX_APP_LINK_LENGTH}
+              defaultValue={appLinks?.apk ?? ""}
+              placeholder="https://example.com/downloads/app.apk"
+              className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+            />
+          </label>
+        </div>
+        <p className="mt-2 text-xs text-muted">
+          The .apk is for guests who install the app directly, without a store — their phone will
+          ask them to allow the install. Host the file yourself over https.
+        </p>
+        <SubmitButton
+          pendingLabel="Saving…"
+          className="mt-4 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+        >
+          Save app links
+        </SubmitButton>
+      </form>
+
+      {/* Google rating + review link (P7-14). A <section> of sibling
+          forms rather than one form: the search, the save, each result's
+          "Use this", and the refresh are four different posts, and HTML
+          has no nested forms. */}
+      <section aria-label="Google" className="mt-6 border border-ink/15 bg-card px-6 py-5">
+        <p className="text-sm font-medium">Google</p>
+        <p className="mt-1 text-xs text-muted">
+          Show your Google star rating under your restaurant name — on the menu and in the app —
+          with a link that opens Google&rsquo;s &ldquo;write a review&rdquo; form. Leave the Place
+          ID empty to show nothing.
+        </p>
+
+        {/* The switch governs everything below it, so it reads first. Its
+            own form, because it is a different post from the search, the
+            save and the refresh — and HTML has no nested forms. */}
+        <form action={saveGoogleRatingEnabledAction} className="mt-4">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="ratingEnabled"
+              defaultChecked={google?.enabled ?? true}
+              className="accent-orange"
+            />
+            <span>Show the Google rating to guests</span>
+          </label>
+          <p className="mt-1 text-xs text-muted">
+            Off hides the star line everywhere without losing your Place ID or the numbers below —
+            switch it back on and they return as they were.
+          </p>
+          <SubmitButton
+            pendingLabel="Saving…"
+            className="mt-3 border border-ink/30 px-5 py-2 text-xs font-medium uppercase tracking-[0.18em] hover:bg-cream"
+          >
+            Save visibility
+          </SubmitButton>
+        </form>
+
+        {/* Find my Place ID — the whole setup without leaving this page */}
+        <form action={searchGooglePlaceAction} className="mt-4">
+          <label className="block text-sm">
+            <span className="font-medium">Find my Place ID</span>
+            <input
+              type="text"
+              name="googleQuery"
+              maxLength={200}
+              autoComplete="off"
+              defaultValue={placeQuery}
+              placeholder="Restaurant name, street and town"
+              className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+            />
+          </label>
+          <p className="mt-1 text-xs text-muted">
+            Search Google for your restaurant — name plus street or town works best — then pick
+            yours from the results.
+          </p>
+          <SubmitButton
+            pendingLabel="Searching…"
+            className="mt-3 border border-ink/30 px-5 py-2 text-xs font-medium uppercase tracking-[0.18em] hover:bg-cream"
+          >
+            Search
+          </SubmitButton>
+        </form>
+
+        {placeSuggestions.length > 0 ? (
+          <ul className="mt-4 divide-y divide-ink/10 border border-ink/10">
+            {placeSuggestions.map((place) => (
+              <li
+                key={place.id}
+                className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5"
+              >
+                <span className="min-w-0 text-sm">
+                  <span className="font-medium">{place.name || "Unnamed place"}</span>
+                  {place.address ? <span className="text-muted"> — {place.address}</span> : null}
+                  <span className="mt-0.5 block break-all font-mono text-[11px] text-muted">
+                    {place.id}
+                  </span>
+                </span>
+                <form action={saveGoogleAction}>
+                  <input type="hidden" name="googlePlaceId" value={place.id} />
+                  <SubmitButton
+                    pendingLabel="Saving…"
+                    className="shrink-0 bg-orange px-4 py-2 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+                  >
+                    Use this
+                  </SubmitButton>
+                </form>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        <form action={saveGoogleAction} className="mt-5 border-t border-ink/10 pt-5">
+          <label className="block text-sm">
+            <span className="font-medium">Google Place ID</span>
+            <input
+              type="text"
+              name="googlePlaceId"
+              inputMode="text"
+              maxLength={255}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="ChIJN1t_tDeuEmsRUsoyG83frY4"
+              defaultValue={google?.placeId ?? ""}
+              className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-ink"
+            />
+          </label>
+          <p className="mt-2 text-xs text-muted">
+            Or paste one yourself — Google&rsquo;s own{" "}
+            <a
+              href="https://developers.google.com/maps/documentation/places/web-service/place-id#find-id"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              Place ID finder
+            </a>{" "}
+            shows it for any restaurant on the map.
+          </p>
+          <SubmitButton
+            pendingLabel="Saving…"
+            className="mt-4 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+          >
+            Save Place ID
+          </SubmitButton>
+        </form>
+
+        {google?.rating ? (
+          <p className="mt-4 text-sm">
+            <span aria-hidden="true" className="text-gold-dark">
+              ★
+            </span>{" "}
+            <strong>{google.rating.rating.toFixed(1)}</strong> · {google.rating.count} reviews ·
+            last refreshed {googleRefreshedLabel}
+          </p>
+        ) : google?.placeId ? (
+          <p className="mt-4 text-xs text-muted">
+            No rating read yet. Ratings refresh by themselves once a day, the first time somebody
+            opens your menu — provided this deployment has a Google Places API key.
+          </p>
+        ) : null}
+        {google?.reviewUrl ? (
+          <p className="mt-1 text-xs text-muted">
+            Review link:{" "}
+            <a
+              href={google.reviewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="break-all underline underline-offset-2"
+            >
+              {google.reviewUrl}
+            </a>
+          </p>
+        ) : null}
+        {google?.placeId ? (
+          <form action={refreshGoogleRatingAction} className="mt-3">
+            <SubmitButton
+              pendingLabel="Asking Google…"
+              className="border border-ink/30 px-5 py-2 text-xs font-medium uppercase tracking-[0.18em] hover:bg-cream"
+            >
+              Refresh rating now
+            </SubmitButton>
+            <span className="mt-1 block text-xs text-muted">
+              Reads Google straight away instead of waiting for the once-a-day refresh — the way to
+              check a Place ID you just saved is the right restaurant.
+            </span>
+          </form>
+        ) : null}
+
+        {/* The fallback: type the number in yourself. Every deployment
+            without a ⛔ human-gated Places API key lands here, so this is
+            the path that actually gets used — it is last in the card only
+            because the fetched number is the better one when available. */}
+        <div className="mt-5 border-t border-ink/10 pt-5">
+          <p className="text-sm font-medium">Enter the rating yourself</p>
+          <p className="mt-1 text-xs text-muted">
+            Shown when no fetched Google rating is available. Use the exact numbers from your Google
+            Business profile.
+          </p>
+          {google && !google.enabled ? (
+            <p className="mt-2 text-xs text-muted">
+              The star line is switched off at the top of this card, so guests see nothing at all
+              right now — whatever you save here.
+            </p>
+          ) : null}
+          {google?.rating ? (
+            <p className="mt-2 text-xs text-muted">
+              Right now the rating fetched from Google ({google.rating.rating.toFixed(1)} ·{" "}
+              {google.rating.count} reviews) is what guests see — it always wins over the numbers
+              below.
+            </p>
+          ) : null}
+
+          <form action={saveGoogleManualRatingAction} className="mt-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label className="block text-sm">
+                <span className="font-medium">Rating</span>
+                <input
+                  type="text"
+                  name="manualRating"
+                  inputMode="decimal"
+                  maxLength={4}
+                  autoComplete="off"
+                  placeholder="4.7"
+                  defaultValue={google?.manual ? google.manual.rating.toFixed(1) : ""}
+                  className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+                />
+                <span className="mt-1 block text-xs text-muted">
+                  Between 1.0 and 5.0, one decimal.
+                </span>
+              </label>
+              <label className="block text-sm">
+                <span className="font-medium">Reviews</span>
+                <input
+                  type="text"
+                  name="manualCount"
+                  inputMode="numeric"
+                  maxLength={8}
+                  autoComplete="off"
+                  placeholder="440"
+                  defaultValue={google?.manual ? String(google.manual.count) : ""}
+                  className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+                />
+                <span className="mt-1 block text-xs text-muted">
+                  How many reviews that average is from.
+                </span>
+              </label>
+            </div>
+            <SubmitButton
+              pendingLabel="Saving…"
+              className="mt-4 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+            >
+              Save rating
+            </SubmitButton>
+          </form>
+
+          {google?.manual ? (
+            <form action={clearGoogleManualRatingAction} className="mt-3">
+              <SubmitButton
+                pendingLabel="Removing…"
+                className="border border-ink/30 px-5 py-2 text-xs font-medium uppercase tracking-[0.18em] hover:bg-cream"
+              >
+                Clear rating
+              </SubmitButton>
+            </form>
+          ) : null}
+        </div>
+      </section>
+
+      {/* Currency + languages */}
+      <form action={saveLocalizationAction} className="mt-6 border border-ink/15 bg-card px-6 py-5">
+        <p className="text-sm font-medium">Currency &amp; languages</p>
+
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="block text-sm">
+            <span className="font-medium">Currency</span>
+            <select
+              name="currency"
+              defaultValue={venue.currency}
+              className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-base outline-none focus:border-ink"
+            >
+              {SUPPORTED_CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-muted">
+              Applies to every dish on the menu. Prices keep their numbers — only the currency
+              changes.
+            </span>
+          </label>
+
+          <label className="block text-sm">
+            <span className="font-medium">Default language</span>
+            <select
+              name="defaultLocale"
+              defaultValue={venue.defaultLocale}
+              className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-base outline-none focus:border-ink"
+            >
+              {SUPPORTED_LOCALES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-muted">
+              The language guests see first. Must be one of the enabled languages below.
+            </span>
+          </label>
+        </div>
+
+        <fieldset className="mt-5">
+          <legend className="text-sm font-medium">Menu languages</legend>
+          <p className="mt-1 text-xs text-muted">
+            Guests can switch between enabled languages on the menu. Dishes without a translation
+            show the default-language text.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-1 text-sm sm:grid-cols-3">
+            {SUPPORTED_LOCALES.map((l) => (
+              <label key={l.code} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="enabledLocales"
+                  value={l.code}
+                  defaultChecked={venue.enabledLocales.includes(l.code)}
+                  className="accent-orange"
+                />
+                <span>
+                  {l.label}
+                  <span className="ml-1 text-xs uppercase text-muted">{l.code}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <SubmitButton
+          pendingLabel="Saving…"
+          className="mt-5 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+        >
+          Save currency &amp; languages
+        </SubmitButton>
+      </form>
+
+      {/* Opening hours */}
+      {venueHours ? (
+        <form action={saveHoursAction} className="mt-6 border border-ink/15 bg-card px-6 py-5">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-sm font-medium">Opening hours</p>
+            <span className="text-[11px] uppercase tracking-[0.18em] text-muted">
+              {venueHours.timezone}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-muted">
+            Shown live on your public menu as Open / Closed. Leave a day&apos;s times blank or tick
+            Closed. For a lunch break, use both slots (e.g. 11:00–14:30 and 17:30–22:00). Times past
+            midnight are fine (e.g. 17:00–02:00).
+          </p>
+          <div className="mt-4 space-y-2">
+            {WEEKDAYS.map((wd) => {
+              const day = venueHours.hours.days[wd];
+              // A day with a single slot that starts in the afternoon or
+              // evening (e.g. Monday dinner only) goes in the SECOND pair,
+              // so it lines up under the other days' dinner times instead
+              // of reading as a lunch slot. Saving is unaffected: either
+              // pair of boxes becomes the same one slot.
+              const only = day?.slots?.length === 1 ? day.slots[0] : undefined;
+              const lateOnly = only !== undefined && only.open >= "15:00";
+              const s1 = lateOnly ? undefined : day?.slots?.[0];
+              const s2 = lateOnly ? only : day?.slots?.[1];
+              const closed = day?.closed ?? !venueHours.hours.configured;
+              return (
+                <div
+                  key={wd}
+                  className="grid grid-cols-[6.5rem_auto] items-center gap-x-3 gap-y-1 border-b border-ink/5 py-1.5 sm:grid-cols-[6.5rem_repeat(4,minmax(0,5.5rem))_auto]"
+                >
+                  <span className="text-sm font-medium">{WEEKDAY_LABELS[wd]}</span>
+                  <input
+                    type="time"
+                    name={`${wd}_open1`}
+                    defaultValue={s1?.open ?? ""}
+                    className="border border-ink/25 bg-white px-2 py-1 text-sm"
+                  />
+                  <input
+                    type="time"
+                    name={`${wd}_close1`}
+                    defaultValue={s1?.close ?? ""}
+                    className="border border-ink/25 bg-white px-2 py-1 text-sm"
+                  />
+                  <input
+                    type="time"
+                    name={`${wd}_open2`}
+                    defaultValue={s2?.open ?? ""}
+                    className="border border-ink/25 bg-white px-2 py-1 text-sm"
+                  />
+                  <input
+                    type="time"
+                    name={`${wd}_close2`}
+                    defaultValue={s2?.close ?? ""}
+                    className="border border-ink/25 bg-white px-2 py-1 text-sm"
+                  />
+                  <label className="flex items-center gap-1.5 text-xs text-muted">
+                    <input
+                      type="checkbox"
+                      name={`${wd}_closed`}
+                      defaultChecked={closed}
+                      className="accent-orange"
+                    />
+                    Closed
+                  </label>
+                </div>
+              );
+            })}
+          </div>
+          {venueHours.hours.configured ? (
+            <p className="mt-3 text-xs text-muted">
+              Current:{" "}
+              {WEEKDAYS.map(
+                (wd) =>
+                  `${WEEKDAY_LABELS[wd].slice(0, 3)} ${formatDay(venueHours.hours.days[wd] ?? { closed: true, slots: [] })}`,
+              ).join(" · ")}
+            </p>
+          ) : null}
+          <SubmitButton
+            pendingLabel="Saving…"
+            className="mt-4 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+          >
+            Save opening hours
+          </SubmitButton>
+        </form>
+      ) : null}
+
+      {/* Ordering */}
+      {ordering ? (
+        <form action={saveOrderingAction} className="mt-6 border border-ink/15 bg-card px-6 py-5">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-sm font-medium">Guest ordering</p>
+            <span className="text-[11px] uppercase tracking-[0.18em] text-muted">
+              {ordering.access.state === "trial"
+                ? `Trial · ${ordering.access.trialDaysLeft} days left`
+                : ordering.access.plan
+                  ? `${PLAN_LABELS[ordering.access.plan]} plan`
+                  : "No active plan"}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-muted">
+            What guests can do from the menu. Greyed-out options aren&apos;t part of your current
+            plan — upgrade any time from Billing.
+          </p>
+          <div className="mt-3 space-y-2 text-sm">
+            {(
+              [
+                [
+                  "dineIn",
+                  "Dine-in ordering",
+                  "Guests order from the table; you bring the food.",
+                  ordering.access.entitlements.dineIn,
+                  ordering.config.dineIn,
+                ],
+                [
+                  "takeaway",
+                  "Takeaway / pickup",
+                  "Guests order ahead with name + phone and collect.",
+                  ordering.access.entitlements.takeaway,
+                  ordering.config.takeaway,
+                ],
+                [
+                  "delivery",
+                  "Delivery",
+                  "Guests order to an address; pay the driver.",
+                  ordering.access.entitlements.delivery,
+                  ordering.config.delivery,
+                ],
+              ] as const
+            ).map(([key, label, hint, entitled, enabled]) => (
+              <label
+                key={key}
+                className={
+                  entitled
+                    ? "flex cursor-pointer items-center justify-between gap-4"
+                    : "flex items-center justify-between gap-4 opacity-45"
+                }
+              >
+                <span>
+                  {label}
+                  {!entitled ? (
+                    <span className="ml-2 text-[10px] uppercase tracking-wider text-orange-dark">
+                      Growth
+                    </span>
+                  ) : null}
+                  <span className="block text-xs text-muted">{hint}</span>
+                </span>
+                {/* Toggle switch: the real (sr-only) checkbox keeps the form
+                    field name, so the save action parses it unchanged. */}
+                <span className="relative inline-flex shrink-0">
+                  <input
+                    type="checkbox"
+                    name={key}
+                    defaultChecked={entitled && enabled}
+                    disabled={!entitled}
+                    className="peer sr-only"
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="h-6 w-11 rounded-full bg-ink/25 transition-colors peer-checked:bg-orange peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-orange peer-disabled:opacity-50 motion-reduce:transition-none"
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5 motion-reduce:transition-none"
+                  />
+                </span>
+              </label>
+            ))}
+          </div>
+
+          {/* Table reservations: a pure owner switch (no plan gate) — a
+              restaurant that doesn't take bookings hides the whole
+              surface, button and API both. */}
+          <div className="mt-4 border-t border-ink/10 pt-4">
+            <label className="flex cursor-pointer items-center justify-between gap-4 text-sm">
+              <span>
+                Table reservations
+                <span className="block text-xs text-muted">
+                  Shows a “Reserve a table” button on your menu. Guests pick a date and time inside
+                  your opening hours; you confirm from Reservations.
+                </span>
+              </span>
+              <span className="relative inline-flex shrink-0">
+                <input
+                  type="checkbox"
+                  name="reservations"
+                  defaultChecked={ordering.config.reservations}
+                  className="peer sr-only"
+                />
+                <span
+                  aria-hidden="true"
+                  className="h-6 w-11 rounded-full bg-ink/25 transition-colors peer-checked:bg-orange peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-orange motion-reduce:transition-none"
+                />
+                <span
+                  aria-hidden="true"
+                  className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5 motion-reduce:transition-none"
+                />
+              </span>
+            </label>
+          </div>
+
+          {ordering.access.entitlements.delivery ? (
+            <div className="mt-4 border-t border-ink/10 pt-4">
+              <p className="text-sm font-medium">Delivery areas</p>
+              <p className="mt-0.5 text-xs text-muted">
+                One ZIP per row with its own fee and minimum. Guests pick their ZIP from this list
+                at checkout. Type a ZIP and the area name fills in automatically. Use{" "}
+                <span className="font-medium">+ Add area</span> to add a row, ✕ to remove one. No
+                rows = deliver anywhere
+                {ordering.config.deliveryAreas.length === 0 &&
+                (ordering.config.deliveryFeeCents > 0 || ordering.config.deliveryMinCents > 0)
+                  ? " (flat fee below applies)"
+                  : ""}
+                .
+              </p>
+              <DeliveryAreasEditor initial={ordering.config.deliveryAreas} />
+              {ordering.config.deliveryAreas.length === 0 ? (
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <label className="block text-sm">
+                    <span className="font-medium">Flat delivery fee (€) — no areas defined</span>
+                    <input
+                      type="number"
+                      name="deliveryFee"
+                      min={0}
+                      step="0.10"
+                      defaultValue={(ordering.config.deliveryFeeCents / 100).toFixed(2)}
+                      className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+                    />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="font-medium">Flat minimum order (€)</span>
+                    <input
+                      type="number"
+                      name="deliveryMin"
+                      min={0}
+                      step="0.50"
+                      defaultValue={(ordering.config.deliveryMinCents / 100).toFixed(2)}
+                      className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+                    />
+                  </label>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="mt-4 border-t border-ink/10 pt-4">
+            <p className="text-sm font-medium">Payment methods you accept</p>
+            <p className="mt-0.5 text-xs text-muted">
+              Shown to guests in the menu footer — how they can pay on site or at the door.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
+              {PAYMENT_METHODS.map((m) => (
+                <label key={m.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name="acceptedPayments"
+                    value={m.id}
+                    defaultChecked={ordering.config.acceptedPayments.includes(m.id)}
+                    className="accent-orange"
+                  />
+                  {m.label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 border-t border-ink/10 pt-4">
+            <label className="block text-sm">
+              <span className="font-medium">New-order email alerts</span>
+              <span className="mt-0.5 block text-xs text-muted">
+                Every new order lands in these inboxes as a kitchen ticket — cash orders the moment
+                they&apos;re placed, card and PayPal orders once they&apos;re paid. Up to{" "}
+                {MAX_NOTIFY_EMAILS} addresses, separated by commas. Leave empty to turn alerts off.
+              </span>
+              <textarea
+                name="notifyEmails"
+                rows={2}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="kueche@example.de, chef@example.de"
+                defaultValue={ordering.config.notifyEmails.join(", ")}
+                className="mt-2 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+              />
+            </label>
+          </div>
+
+          <div className="mt-4 border-t border-ink/10 pt-4">
+            <label className="block text-sm">
+              <span className="font-medium">Problem reports</span>
+              <span className="mt-0.5 block text-xs text-muted">
+                Guests can report a problem within this many hours after the order (or after its
+                scheduled time, for a pre-order). A conversation that is already open stays usable
+                afterwards — this only limits how long a new one can be started.
+              </span>
+              <span className="mt-2 flex items-center gap-2">
+                <input
+                  type="number"
+                  name="issueWindowHours"
+                  min={1}
+                  step={1}
+                  inputMode="numeric"
+                  defaultValue={ordering.config.issueWindowHours}
+                  className="w-24 border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+                />
+                <span className="text-sm text-muted">hours</span>
+              </span>
+            </label>
+          </div>
+
+          <div className="mt-4 border-t border-ink/10 pt-4">
+            <label className="block text-sm">
+              <span className="font-medium">Guests can cancel cash orders</span>
+              <span className="mt-0.5 block text-xs text-muted">
+                For this many minutes after placing a <strong>cash</strong> order, the guest sees a
+                &ldquo;Cancel order&rdquo; button in the app and on their order page — only while
+                the order is not ready yet. After that the button disappears. You get a push
+                notification when a guest cancels. <strong>0</strong> switches it off. Online-paid
+                orders are not affected.
+              </span>
+              <span className="mt-2 flex items-center gap-2">
+                <input
+                  type="number"
+                  name="cashCancelMinutes"
+                  min={0}
+                  max={60}
+                  step={1}
+                  inputMode="numeric"
+                  defaultValue={ordering.config.cashCancelMinutes}
+                  className="w-24 border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+                />
+                <span className="text-sm text-muted">minutes (0–60)</span>
+              </span>
+            </label>
+          </div>
+
+          <fieldset className="mt-4 border-t border-ink/10 pt-4">
+            <legend className="float-left w-full text-sm font-medium">
+              Expected time for new orders
+            </legend>
+            <p className="clear-both pt-1 text-xs text-muted">
+              For delivery and pickup orders placed for &quot;as soon as possible&quot;. When a new
+              order arrives you can change the time with − and + and accept it; if nobody does
+              within the time below, this default applies and the guest sees it. Planned orders keep
+              the time the guest chose.
+            </p>
+            <div className="mt-3 grid gap-4 sm:grid-cols-3">
+              <label className="block text-sm">
+                <span className="font-medium">Delivery default</span>
+                <span className="mt-1 flex items-center gap-2">
+                  <input
+                    type="number"
+                    name="etaDeliveryMinutes"
+                    min={ETA_MIN_MINUTES}
+                    max={ETA_MAX_MINUTES}
+                    step={ETA_STEP_MINUTES}
+                    defaultValue={ordering.config.etaDeliveryMinutes}
+                    className="w-24 border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+                  />
+                  <span className="text-sm text-muted">minutes</span>
+                </span>
+              </label>
+              <label className="block text-sm">
+                <span className="font-medium">Pickup default</span>
+                <span className="mt-1 flex items-center gap-2">
+                  <input
+                    type="number"
+                    name="etaPickupMinutes"
+                    min={ETA_MIN_MINUTES}
+                    max={ETA_MAX_MINUTES}
+                    step={ETA_STEP_MINUTES}
+                    defaultValue={ordering.config.etaPickupMinutes}
+                    className="w-24 border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+                  />
+                  <span className="text-sm text-muted">minutes</span>
+                </span>
+              </label>
+              <label className="block text-sm">
+                <span className="font-medium">Time to change it</span>
+                <span className="mt-1 flex items-center gap-2">
+                  <input
+                    type="number"
+                    name="etaAcceptSeconds"
+                    min={ETA_ACCEPT_MIN_SECONDS}
+                    max={ETA_ACCEPT_MAX_SECONDS}
+                    defaultValue={ordering.config.etaAcceptSeconds}
+                    className="w-24 border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+                  />
+                  <span className="text-sm text-muted">
+                    seconds ({ETA_ACCEPT_MIN_SECONDS}–{ETA_ACCEPT_MAX_SECONDS})
+                  </span>
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <div className="mt-4 border-t border-ink/10 pt-4">
+            <label className="mb-3 flex flex-wrap items-center gap-3 text-sm">
+              <span className="font-medium">Discount on every order</span>
+              <input
+                type="number"
+                name="orderDiscountPercent"
+                min={0}
+                max={50}
+                step={1}
+                defaultValue={ordering.config.orderDiscountPercent}
+                className="w-20 border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+              />
+              <span className="text-sm text-muted">
+                % off the food (pickup, delivery and dine-in; not the delivery fee). 0 = off.
+              </span>
+            </label>
+            <p className="text-sm text-muted">
+              Cancelling orders in the app: the owner always can; team members only with the
+              &quot;Cancel orders&quot; box ticked on the Team page.
+            </p>
+          </div>
+
+          <SubmitButton
+            pendingLabel="Saving…"
+            className="mt-4 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+          >
+            Save ordering
+          </SubmitButton>
+        </form>
+      ) : null}
+
+      {/* Loyalty */}
+      {loyalty ? (
+        <form action={saveLoyaltyAction} className="mt-6 border border-ink/15 bg-card px-6 py-5">
+          <p className="text-sm font-medium">Loyalty</p>
+          <p className="mt-1 text-xs text-muted">
+            Reward regulars with points. Points are earned per <em>order</em>, not per dish — one
+            qualifying order is worth the same whether it&apos;s one curry or five. Guests must be
+            signed in to collect; everyone else just sees an invitation to sign in.
+          </p>
+
+          <label className="mt-4 flex cursor-pointer items-center justify-between gap-4 text-sm">
+            <span>
+              Collect points
+              <span className="block text-xs text-muted">
+                Off means guests see nothing at all — no cart line, no rewards card.
+              </span>
+            </span>
+            <span className="relative inline-flex shrink-0">
+              <input
+                type="checkbox"
+                name="loyaltyEnabled"
+                defaultChecked={loyalty.enabled}
+                className="peer sr-only"
+              />
+              <span
+                aria-hidden="true"
+                className="h-6 w-11 rounded-full bg-ink/25 transition-colors peer-checked:bg-orange peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-orange motion-reduce:transition-none"
+              />
+              <span
+                aria-hidden="true"
+                className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5 motion-reduce:transition-none"
+              />
+            </span>
+          </label>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 border-t border-ink/10 pt-4 sm:grid-cols-2">
+            <label className="block text-sm">
+              <span className="font-medium">Points are earned per (€ of food)</span>
+              <input
+                type="number"
+                name="loyaltyMinOrder"
+                min={0}
+                step="0.50"
+                defaultValue={(loyalty.minOrderCents / 100).toFixed(2)}
+                className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+              />
+              <span className="mt-1 block text-xs text-muted">
+                Every full step earns points — at €20, an order of €45 counts twice. Also the
+                minimum: below it, no points. Food only; the delivery fee never counts.
+              </span>
+            </label>
+            <label className="block text-sm">
+              <span className="font-medium">Points for each step</span>
+              <input
+                type="number"
+                name="loyaltyPointsPerOrder"
+                min={0}
+                step="1"
+                defaultValue={loyalty.pointsPerOrder}
+                className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+              />
+              <span className="mt-1 block text-xs text-muted">
+                e.g. 5 points for every full €{(loyalty.minOrderCents / 100).toFixed(0)} spent on
+                food.
+              </span>
+            </label>
+            <label className="block text-sm">
+              <span className="font-medium">Points needed for a reward</span>
+              <input
+                type="number"
+                name="loyaltyRewardPoints"
+                min={1}
+                step="1"
+                defaultValue={loyalty.rewardPoints}
+                className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+              />
+              <span className="mt-1 block text-xs text-muted">
+                {loyalty.pointsPerOrder > 0
+                  ? `About €${Math.ceil(loyalty.rewardPoints / loyalty.pointsPerOrder) * Math.max(1, loyalty.minOrderCents / 100)} of food at today's rate.`
+                  : "Set points for each step above first."}
+              </span>
+            </label>
+            <label className="block text-sm">
+              <span className="font-medium">Reward is worth (€)</span>
+              <input
+                type="number"
+                name="loyaltyRewardValue"
+                min={0}
+                step="0.50"
+                defaultValue={(loyalty.rewardValueCents / 100).toFixed(2)}
+                className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+              />
+              <span className="mt-1 block text-xs text-muted">
+                The free-meal value of one voucher.
+              </span>
+            </label>
+            <label className="block text-sm">
+              <span className="font-medium">Reward stays valid for</span>
+              {/* "End of the month it was earned" is gone: a guest who
+                  earned a reward on the 28th lost it on the 31st. A year
+                  is the default, and a stored 0 from the old list reads
+                  as a year too (see `loyalty-config.ts`). */}
+              <select
+                name="loyaltyExpiryMonths"
+                defaultValue={String(loyalty.voucherExpiryMonths)}
+                className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+              >
+                <option value="1">1 month</option>
+                <option value="3">3 months</option>
+                <option value="6">6 months</option>
+                <option value="12">1 year — recommended</option>
+                <option value="24">2 years</option>
+              </select>
+              <span className="mt-1 block text-xs text-muted">
+                Counted from the month the reward was earned, and always the last second of that
+                month in your restaurant&apos;s timezone.
+              </span>
+            </label>
+          </div>
+
+          <SubmitButton
+            pendingLabel="Saving…"
+            className="mt-4 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+          >
+            Save loyalty
+          </SubmitButton>
+        </form>
+      ) : null}
+
+      {/* Gift cards. A <section> of sibling forms rather than one form:
+          the switches and each of the three designs are separate posts,
+          and HTML has no nested forms. */}
+      {giftCards ? (
+        <section aria-label="Gift cards" className="mt-6 border border-ink/15 bg-card px-6 py-5">
+          <p className="text-sm font-medium">Gift cards</p>
+          <p className="mt-1 text-xs text-muted">
+            Sell gift cards for your restaurant. A guest buys one in the app, pays for it there, and
+            gets a code they can forward — your staff take it at the counter, or the guest spends it
+            in their own cart. Every card sold shows up under{" "}
+            <strong className="font-medium text-ink">Gift cards</strong> in the menu on the left.
+          </p>
+
+          <form action={saveGiftCardsAction} className="mt-4">
+            <label className="flex cursor-pointer items-center justify-between gap-4 text-sm">
+              <span>
+                Sell gift cards
+                <span className="block text-xs text-muted">
+                  Off hides the whole gift-card section from guests. Cards already sold keep working
+                  — switching off stops new sales, it never voids a card someone paid for.
+                </span>
+              </span>
+              <span className="relative inline-flex shrink-0">
+                <input
+                  type="checkbox"
+                  name="giftCardsEnabled"
+                  defaultChecked={giftCards.enabled}
+                  className="peer sr-only"
+                />
+                <span
+                  aria-hidden="true"
+                  className="h-6 w-11 rounded-full bg-ink/25 transition-colors peer-checked:bg-orange peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-orange motion-reduce:transition-none"
+                />
+                <span
+                  aria-hidden="true"
+                  className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5 motion-reduce:transition-none"
+                />
+              </span>
+            </label>
+
+            <div className="mt-4 grid grid-cols-1 gap-4 border-t border-ink/10 pt-4 sm:grid-cols-2">
+              <label className="block text-sm">
+                <span className="font-medium">Cards stay valid for</span>
+                <select
+                  name="giftCardExpiryMonths"
+                  defaultValue={String(giftCards.expiryMonths)}
+                  aria-describedby="giftcard-expiry-hint"
+                  className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+                >
+                  {giftCardTerms.map((m) => (
+                    <option key={m} value={String(m)}>
+                      {giftCardTermLabel(m)}
+                    </option>
+                  ))}
+                </select>
+                <span id="giftcard-expiry-hint" className="mt-1 block text-xs text-muted">
+                  Counted from the day the card is paid for, and always the last second of that day
+                  in your restaurant&apos;s timezone.
+                </span>
+              </label>
+            </div>
+
+            {/* The legal note is the reason this card has a recommended
+                value at all: a gift card is PAID for, which puts it on a
+                different footing from a loyalty reward the guest was given.
+                Written out rather than linked — the owner is making the
+                decision right here, and a link is a decision deferred. */}
+            <div className="mt-4 space-y-2 border border-ink/15 bg-cream px-4 py-3 text-xs leading-relaxed">
+              <p>
+                <strong className="font-semibold">
+                  Three years ({GIFT_CARD_RECOMMENDED_EXPIRY_MONTHS} months) is the recommended
+                  term.
+                </strong>{" "}
+                A gift card is paid for, so a shorter expiry is legally risky in Germany: the
+                statutory limitation period is three years (§ 195 BGB), and a court will normally
+                side with the guest against anything shorter. We save whatever you choose — the call
+                is yours — but {GIFT_CARD_RECOMMENDED_EXPIRY_MONTHS} months is the term least likely
+                to be struck down.
+              </p>
+              <p>
+                <strong className="font-semibold">
+                  VAT falls due when a card is redeemed, not when it is sold.
+                </strong>{" "}
+                A card you sell here is a multi-purpose voucher (Mehrzweckgutschein, § 3 Abs. 14
+                UStG), so taking the money is not yet a taxable turnover. That is what the Gift
+                cards page is for: it lists every card with the date it was redeemed, and its CSV
+                export is the file your accountant needs.
+              </p>
+            </div>
+
+            {isRiskyExpiry(giftCards.expiryMonths) ? (
+              <p className="mt-3 border border-orange/40 bg-orange/10 px-4 py-3 text-xs leading-relaxed">
+                Your cards currently expire after{" "}
+                <strong className="font-semibold">{giftCards.expiryMonths} months</strong> — under{" "}
+                {GIFT_CARD_RISKY_EXPIRY_BELOW_MONTHS} months, which is the risky end for a voucher
+                someone paid for. A guest can challenge it, and § 195 BGB gives them three years.
+                Raise it to {GIFT_CARD_RECOMMENDED_EXPIRY_MONTHS} months unless your tax adviser has
+                told you otherwise.
+              </p>
+            ) : null}
+
+            <SubmitButton
+              pendingLabel="Saving…"
+              className="mt-4 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+            >
+              Save gift cards
+            </SubmitButton>
+          </form>
+
+          <div className="mt-6 border-t border-ink/10 pt-5">
+            <p className="text-sm font-medium">Your three designs</p>
+            <p className="mt-1 text-xs text-muted">
+              Three cards, three suggested amounts — rename them, set what each one suggests, and
+              give it a picture. Guests choose their own amount when they buy, so these are a
+              starting point, not a price list. Untick a design to take it off sale without losing
+              it.
+            </p>
+            <ul className="mt-4 space-y-4">
+              {giftCardProducts.map((product) => (
+                <li key={product.id} className="border border-ink/15 px-4 py-4">
+                  <form action={saveGiftCardProductAction}>
+                    <input type="hidden" name="productId" value={product.id} />
+                    <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+                      {/* `imagePath` rather than `imageUrl`: the preview is
+                          same-origin, so it renders even when APP_URL is not
+                          reachable from the owner's browser (local dev). */}
+                      {product.imagePath ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={product.imagePath}
+                          alt={`${product.name} gift card`}
+                          className="h-24 w-40 shrink-0 border border-ink/15 bg-white object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-24 w-40 shrink-0 items-center justify-center border border-dashed border-ink/20 text-center text-[10px] uppercase leading-tight text-muted">
+                          no picture yet
+                        </span>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <label className="block text-sm">
+                            <span className="font-medium">
+                              Design name
+                              <RequiredMark />
+                            </span>
+                            <input
+                              type="text"
+                              name="name"
+                              required
+                              maxLength={120}
+                              defaultValue={product.name}
+                              className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+                            />
+                          </label>
+                          <label className="block text-sm">
+                            <span className="font-medium">
+                              Suggested amount (€)
+                              <RequiredMark />
+                            </span>
+                            <input
+                              type="number"
+                              name="price"
+                              required
+                              min={0.5}
+                              step="0.50"
+                              defaultValue={(product.priceCents / 100).toFixed(2)}
+                              className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
+                            />
+                            <span className="mt-1 block text-xs text-muted">
+                              What this design suggests. The guest can change it before paying —
+                              anything from €5 to €500, in whole euros — and the card is worth
+                              whatever they chose.
+                            </span>
+                          </label>
+                        </div>
+                        <label className="mt-4 block text-sm">
+                          <span className="font-medium">
+                            {product.imagePath ? "Replace the picture" : "Picture"}
+                          </span>
+                          <input
+                            type="file"
+                            name="image"
+                            accept="image/jpeg,image/png,image/webp"
+                            className="mt-1 block w-full text-sm file:mr-3 file:border file:border-ink/30 file:bg-cream file:px-3 file:py-1.5 file:text-xs file:uppercase file:tracking-wider"
+                          />
+                          <span className="mt-1 block text-xs text-muted">
+                            Shown to the guest while they choose, and on the card they forward. Wide
+                            images look best — about 800 × 500 pixels. JPEG, PNG, or WebP up to
+                            10&nbsp;MB. Leave empty to keep the picture you have.
+                          </span>
+                        </label>
+                        <label className="mt-4 flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            name="active"
+                            defaultChecked={product.active}
+                            className="accent-orange"
+                          />
+                          <span>On sale</span>
+                        </label>
+                        <RequiredLegend className="mt-2 text-xs text-muted" />
+                        <SubmitButton
+                          pendingLabel="Saving…"
+                          className="mt-3 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+                        >
+                          Save design
+                        </SubmitButton>
+                      </div>
+                    </div>
+                  </form>
+                  {product.imageKey ? (
+                    <form action={removeGiftCardImageAction} className="mt-2">
+                      <input type="hidden" name="productId" value={product.id} />
+                      <SubmitButton
+                        pendingLabel="Removing…"
+                        className="text-xs text-red-800 underline underline-offset-2 hover:text-red-900"
+                      >
+                        Remove picture
+                      </SubmitButton>
+                    </form>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      ) : null}
+
+      {/* Diet filters */}
+      <form action={saveHalalAction} className="mt-6 border border-ink/15 bg-card px-6 py-5">
+        <p className="text-sm font-medium">Diet filters</p>
+        <p className="mt-1 text-xs text-muted">
+          Vegetarian, vegan, gluten-free, and dairy-free filters are always available to guests.
+          Halal is your call — enable it only if your kitchen can stand behind it.
+        </p>
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="halal"
+            defaultChecked={venue.branding.halalFilter === "on"}
+            className="accent-orange"
+          />
+          <span>
+            Offer the Halal filter and badge <span className="text-muted">(حلال)</span>
+          </span>
+        </label>
+        <SubmitButton
+          pendingLabel="Saving…"
+          className="mt-4 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+        >
+          Save diet filters
+        </SubmitButton>
+      </form>
+
+      {/* Web address (read-only) */}
+      <section aria-label="Web address" className="mt-6 border border-ink/15 bg-card px-6 py-5">
+        <p className="text-sm font-medium">Web address</p>
+        <p className="mt-1 font-mono text-sm">{siteUrl()}/</p>
+        <p className="mt-2 text-xs text-muted">
+          Printed QR codes point here, so the address is fixed. Need it changed? Contact support —
+          we set up a redirect so old codes keep working.
+        </p>
+      </section>
+
+      {/* Password — the only card here about the ACCOUNT rather than the
+          restaurant, which is why it sits last, under a rule. The current
+          password is required on purpose: this dashboard stays open on the
+          counter's tablet through service. */}
+      <form
+        action={changePasswordAction}
+        className="mt-10 border-t border-ink/15 pt-8"
+        aria-labelledby="password-heading"
+      >
+        <div className="border border-ink/15 bg-card px-6 py-5">
+          <p id="password-heading" className="text-sm font-medium">
+            Password
+          </p>
+          <p className="mt-1 text-xs text-muted">
+            The password you sign in with — here and in the restaurant app. Changing it signs your
+            other devices out; this one stays open.
+          </p>
+
+          {/* Announced as well as shown: the flash popup is at the top of
+              a page the owner has just scrolled to the bottom of. */}
+          {/* Rendered empty rather than conditionally: a live region has
+              to be in the DOM before the text lands in it. */}
+          <div aria-live="polite" aria-atomic="true">
+            {passwordNotice?.text ? (
+              <p
+                className={`mt-3 border px-3 py-2 text-xs ${
+                  passwordNotice.kind === "error"
+                    ? "border-red-800/30 bg-red-50 text-red-900"
+                    : "border-emerald-800/30 bg-emerald-50 text-emerald-900"
+                }`}
+              >
+                {passwordNotice.text}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="block text-sm sm:col-span-2">
+              <span className="font-medium">
+                Current password
+                <RequiredMark />
+              </span>
+              <PasswordInput
+                name="currentPassword"
+                autoComplete="current-password"
+                required
+                maxLength={1024}
+                className="border border-ink/30 bg-white px-3 py-2 text-base outline-none focus:border-ink"
+                wrapperClassName="mt-1"
+              />
+              <span className="mt-1 block text-xs text-muted">
+                The one you use today. Forgotten it? Sign out and use “Forgot password”.
+              </span>
+            </label>
+
+            <label className="block text-sm">
+              <span className="font-medium">
+                New password
+                <RequiredMark />
+              </span>
+              <PasswordInput
+                name="newPassword"
+                autoComplete="new-password"
+                required
+                minLength={OWNER_PASSWORD_MIN_LENGTH}
+                maxLength={1024}
+                aria-describedby="password-hint"
+                className="border border-ink/30 bg-white px-3 py-2 text-base outline-none focus:border-ink"
+                wrapperClassName="mt-1"
+              />
+              {/* One template literal rather than `{N} characters`: JSX
+                  eats the space between an expression and the text that
+                  follows it on the next source line, and "At least
+                  12characters" is not a sentence. */}
+              <span id="password-hint" className="mt-1 block text-xs text-muted">
+                {`At least ${OWNER_PASSWORD_MIN_LENGTH} characters. A short sentence you'll remember works better than a scramble you won't.`}
+              </span>
+            </label>
+
+            <label className="block text-sm">
+              <span className="font-medium">
+                Confirm new password
+                <RequiredMark />
+              </span>
+              <PasswordInput
+                name="confirmPassword"
+                autoComplete="new-password"
+                required
+                minLength={OWNER_PASSWORD_MIN_LENGTH}
+                maxLength={1024}
+                className="border border-ink/30 bg-white px-3 py-2 text-base outline-none focus:border-ink"
+                wrapperClassName="mt-1"
+              />
+              <span className="mt-1 block text-xs text-muted">
+                Type the new password a second time so a typo can&apos;t lock you out.
+              </span>
+            </label>
+          </div>
+
+          <RequiredLegend />
+          <SubmitButton
+            pendingLabel="Changing…"
+            className="mt-4 bg-orange px-5 py-2.5 text-xs font-medium uppercase tracking-[0.18em] text-card hover:bg-orange-dark"
+          >
+            Change password
+          </SubmitButton>
+        </div>
+      </form>
+    </main>
+  );
+}
