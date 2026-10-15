@@ -57,11 +57,13 @@ const BANNER_PREFIX = "banner:";
 export const BUILT_IN_SLIDES = [
   // Revs bumped 2026-10-02: every poster recompressed (1080 px wide,
   // WebP q66 — about 45% lighter, 679 KB → 385 KB for the five).
-  { name: "points-de", label: "Points banner (German)", kind: "banner", rev: 3 },
-  { name: "welcome-de", label: "Welcome banner (German)", kind: "banner", rev: 2 },
-  { name: "giftcard-de", label: "Gift-card banner (German)", kind: "banner", rev: 2 },
+  // Bumped again 2026-10-15: points/welcome/giftcard/catering re-drawn as
+  // the Maaji teal/gold set by scripts/render-maaji-posters.mjs.
+  { name: "points-de", label: "Points banner (German)", kind: "banner", rev: 4 },
+  { name: "welcome-de", label: "Welcome banner (German)", kind: "banner", rev: 3 },
+  { name: "giftcard-de", label: "Gift-card banner (German)", kind: "banner", rev: 3 },
   { name: "service-de", label: "Service promise banner (German)", kind: "banner", rev: 2 },
-  { name: "catering-de", label: "Catering banner (German)", kind: "banner", rev: 2 },
+  { name: "catering-de", label: "Catering banner (German)", kind: "banner", rev: 3 },
 ] as const satisfies readonly {
   name: string;
   label: string;

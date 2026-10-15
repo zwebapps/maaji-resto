@@ -48,7 +48,7 @@ import { colors, fonts, radius } from "../theme";
  * the image simply fails and the sheet starts at its title.
  */
 
-const CATERING_BANNER = `${BASE_URL}/app-slider/catering-de.webp`;
+const CATERING_BANNER = `${BASE_URL}/app-slider/catering-de.webp?v=3`;
 
 /** Calendar months to stack: tomorrow … four months on can touch five. */
 const CALENDAR_MONTHS = 5;

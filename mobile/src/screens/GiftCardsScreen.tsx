@@ -82,7 +82,7 @@ import { displayVenueName } from "../venue-name";
  * while the venue's live discount agrees with it (see the render), so the
  * app can never advertise a number the checkout would not honour.
  */
-const GIFT_CARD_BANNER = `${BASE_URL}/app-slider/giftcard-de.webp`;
+const GIFT_CARD_BANNER = `${BASE_URL}/app-slider/giftcard-de.webp?v=3`;
 const BANNER_PERCENT = 5;
 
 /** Which sheet to open. There is no cash route: nobody sells a gift card
