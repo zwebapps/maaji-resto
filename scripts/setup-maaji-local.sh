@@ -58,7 +58,7 @@ UPDATE venues SET
   }}'::jsonb,
   ordering = '{"dineIn": true, "delivery": true, "takeaway": true, "pausedUntil": null,
     "deliveryZips": [], "notifyEmails": [], "reservations": true,
-    "deliveryAreas": [],
+    "deliveryAreas": [{"zip": "79114", "feeCents": 0, "locality": "Freiburg", "minCents": 0, "freeOverCents": 0}, {"zip": "79110", "feeCents": 0, "locality": "Freiburg", "minCents": 0, "freeOverCents": 0}, {"zip": "79111", "feeCents": 0, "locality": "Freiburg", "minCents": 0, "freeOverCents": 0}, {"zip": "79106", "feeCents": 0, "locality": "Freiburg", "minCents": 0, "freeOverCents": 0}],
     "acceptedPayments": ["cash", "girocard", "visa", "mastercard"], "appCancelEnabled": false,
     "deliveryFeeCents": 0, "deliveryMinCents": 0, "etaAcceptSeconds": 30, "etaPickupMinutes": 20,
     "issueWindowHours": 3, "cashCancelMinutes": 10, "etaDeliveryMinutes": 50, "orderDiscountPercent": 0}'::jsonb,
