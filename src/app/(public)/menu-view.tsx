@@ -694,7 +694,12 @@ export function MenuView({
                     : "h-10 w-10 shrink-0"
                 }
               />
-              <span className="min-w-0 font-serif text-lg italic">{menu.venue.name}</span>
+              <span
+                className="min-w-0 font-serif text-lg italic"
+                style={{ color: "var(--menu-name, currentColor)" }}
+              >
+                {menu.venue.name}
+              </span>
             </div>
 
             {/* b · The restaurant's own numbers — icon + number, one line.
@@ -2319,7 +2324,16 @@ function VenueMark({
       />
       {showName ? (
         <div className="min-w-0">
-          <span className="block min-w-0 truncate font-serif text-lg italic leading-tight text-[var(--menu-text)]">
+          {/* A theme with its own name colour (Maaji) sets the name like its
+              app header: serif capitals, tracked, in that colour. Every other
+              theme keeps the small italic in the page text colour. */}
+          <span
+            className={`block min-w-0 truncate font-serif leading-tight text-[var(--menu-name,var(--menu-text))] ${
+              resolveMenuTheme(venue.branding.theme).vars.nameColor
+                ? "text-lg font-semibold uppercase tracking-[0.08em]"
+                : "text-lg italic"
+            }`}
+          >
             {venue.name}
           </span>
         </div>

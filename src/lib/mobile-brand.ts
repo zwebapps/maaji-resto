@@ -53,6 +53,9 @@ export interface MobileColors {
   onRed: string;
   positive: string;
   danger: string;
+  /** The restaurant's name in the app header: the theme's `nameColor` when
+   *  it clears AA on the chrome, else the header accent (`goldSoft`). */
+  name: string;
 }
 
 export interface MobileBrandInput {
@@ -301,6 +304,8 @@ export function deriveMobileColors(theme: MenuTheme): MobileColors {
     onRed,
     positive: ensureOn(theme.vars.positive, grounds),
     danger: ensureOn(dangerFor(creamCard), grounds),
+    name:
+      theme.vars.nameColor && meets(theme.vars.nameColor, red) ? theme.vars.nameColor : goldSoft,
   };
 }
 

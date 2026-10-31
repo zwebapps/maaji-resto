@@ -21,7 +21,8 @@
     "line": "#dad8cc",
     "onRed": "#fdf6e6",
     "positive": "#1d6b5a",
-    "danger": "#a4231b"
+    "danger": "#a4231b",
+    "name": "#e0b458"
   },
   "scrim": "rgba(12, 58, 55, 0.42)",
   "assets": {

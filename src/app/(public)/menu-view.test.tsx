@@ -444,7 +444,7 @@ describe("MenuView", () => {
     // the metadata — so this checks the one piece of markup that actually
     // moved, and then that the hero page says the name no more often than
     // the sticky-bar page does.
-    const MARK_NAME = "block min-w-0 truncate font-serif text-lg italic leading-tight";
+    const MARK_NAME = "block min-w-0 truncate font-serif leading-tight";
     const hero: PublicMenu = {
       ...fixture,
       venue: { ...fixture.venue, branding: { ...fixture.venue.branding, bannerKey: "b1" } },

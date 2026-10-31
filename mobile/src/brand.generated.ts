@@ -29,6 +29,7 @@ export const colors = {
   onRed: "#fdf6e6",
   positive: "#1d6b5a",
   danger: "#a4231b",
+  name: "#e0b458",
 } as const;
 
 /** Wash between the hero artwork and the text over it — see deriveScrim. */

@@ -71,6 +71,13 @@ describe("theme palettes are readable (AA)", () => {
         ["card soft ink on surface", ratio(cardSoft, v.surface), 4.5],
         ["card accent on surface (price)", ratio(cardAccent, v.surface), 3.0],
         ["positive badge on surface", ratio(v.positive, v.surface), 3.0],
+        ...(v.nameColor
+          ? ([["restaurant name on bg", ratio(v.nameColor, v.bg), 4.5]] as [
+              string,
+              number,
+              number,
+            ][])
+          : []),
       ];
       const fails = checks
         .filter(([, r, min]) => r < min)

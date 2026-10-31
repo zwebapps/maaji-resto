@@ -1093,7 +1093,7 @@ const styles = StyleSheet.create({
    * arithmetic rather than a guess about each platform's ascenders.
    */
   headerWordmark: {
-    color: colors.goldSoft,
+    color: colors.name,
     fontSize: 19,
     lineHeight: 26,
     letterSpacing: 0.5,

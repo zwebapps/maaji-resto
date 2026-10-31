@@ -52,6 +52,14 @@ export interface MenuTheme {
     surfaceText?: string;
     surfaceTextSoft?: string;
     surfaceAccent?: string;
+    /**
+     * OPTIONAL colour for the restaurant's NAME in the header (web) and the
+     * app's header wordmark, when the brand sets it apart from page text —
+     * Maaji's gold. Absent: the name keeps the
+     * page text colour (web) / the accent (app), as before. Must clear AA
+     * on `bg` (menu-themes-contrast.test.ts).
+     */
+    nameColor?: string;
   };
   /** Stroke color for background textures on this theme. */
   textureInk: string;
@@ -319,6 +327,8 @@ export const MENU_THEMES: readonly MenuTheme[] = [
       surfaceText: "#0f3b39",
       surfaceTextSoft: "#4a5f5c",
       surfaceAccent: "#8f6410",
+      // The name in the brand gold, set like the app header; 5.18:1 on the teal.
+      nameColor: "#e0b458",
     },
     textureInk: "rgba(224, 180, 88, 0.05)",
   },
@@ -674,6 +684,7 @@ export function menuThemeStyle(
     "--menu-danger": dangerFor(theme.vars.surface),
     "--menu-on-surface-accent": onColorFor(theme.vars.surfaceAccent ?? theme.vars.accent),
     "--menu-on-positive": onColorFor(theme.vars.positive),
+    ...(theme.vars.nameColor ? { "--menu-name": theme.vars.nameColor } : {}),
     // Split-surface themes default their headings to the card ink — the page
     // ground can be artwork, and the surface pill below guarantees contrast.
     // Keyed on the theme's OWN surfaceText, not the resolved var above:
