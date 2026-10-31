@@ -78,6 +78,12 @@ echo "→ menu, photos and translations from Rangla's LIVE site (public, read-on
 SOURCE_URL="${SOURCE_URL:-https://rangla-punjab-restaurant.de}" TARGET_SLUG="$SLUG" KEEP_CATEGORIES="Thali" \
   run scripts/import-menu-from-live-site.ts
 
+if [ -f release/rangla-staff-menu.json ]; then
+  echo "→ Thali from Rangla's staff menu (python3 scripts/fetch-staff-menu.py)"
+  STAFF_MENU_FILE=release/rangla-staff-menu.json CATEGORY=Thali TARGET_SLUG="$SLUG" \
+    run scripts/apply-staff-menu-category.ts
+fi
+
 echo "→ offer: Pakoras 6,90 → 4,90 € (open-ended)"
 psql_maaji <<SQL
 UPDATE items i SET offer_price_cents = 490, offer_starts_at = NULL, offer_ends_at = NULL,
