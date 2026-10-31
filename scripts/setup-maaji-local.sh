@@ -65,7 +65,8 @@ UPDATE venues SET
   loyalty = '{"enabled": true, "rewardPoints": 100, "minOrderCents": 2000, "pointsPerOrder": 5,
     "rewardValueCents": 2000, "voucherExpiryMonths": 0}'::jsonb,
   gift_cards = '{"enabled": true, "expiryMonths": 36}'::jsonb,
-  contact = '{"landline": "+4976151466424", "email": "gw5dqcto@kontakt-ordersmart.de"}'::jsonb,
+  contact = '{"landline": "+4976151466424", "email": "gw5dqcto@kontakt-ordersmart.de",
+    "address": "Sundgauallee 49\n79114 Freiburg im Breisgau"}'::jsonb,
   "updatedAt" = now()
 WHERE slug = '$SLUG';
 SQL
