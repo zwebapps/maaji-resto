@@ -1,4 +1,5 @@
 import { orderLabel } from "@/lib/order-label";
+import { BRAND } from "@/lib/brand";
 import { PasswordInput } from "@/components/password-input";
 import type { Metadata } from "next";
 import { FlashMessage } from "@/components/flash-message";
@@ -191,7 +192,7 @@ export default async function AccountPage({
 
   return (
     <main className="mx-auto min-h-screen max-w-xl bg-cream px-6 py-14 text-ink">
-      <p className="text-xs uppercase tracking-[0.28em] text-gold-dark">Rangla Punjab</p>
+      <p className="text-xs uppercase tracking-[0.28em] text-gold-dark">{BRAND.name}</p>
       <h1 className="mt-2 font-serif text-4xl leading-tight">Mein Konto · My account</h1>
 
       {welcome ? (
@@ -236,9 +237,7 @@ export default async function AccountPage({
         <section className="mt-8 space-y-3">
           {wantsDelete ? (
             <div id="konto-loeschen" className="border border-ink/15 bg-card px-5 py-4 text-sm">
-              <h2 className="font-serif text-2xl">
-                Konto löschen · Delete account – Rangla Punjab Restaurant
-              </h2>
+              <h2 className="font-serif text-2xl">Konto löschen · Delete account – {BRAND.name}</h2>
               <ol className="mt-3 list-decimal space-y-1 ps-5">
                 <li>
                   Unten anmelden – mit demselben Konto wie in der App. / Sign in below with the

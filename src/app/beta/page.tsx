@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 
 /**
@@ -43,6 +44,9 @@ const buttonClass =
   "flex min-h-14 w-full flex-col items-center justify-center rounded-2xl bg-orange px-6 py-3 text-white no-underline transition-colors hover:bg-orange-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange";
 
 export default function BetaPage(): React.ReactElement {
+  // Rangla's Android test programme (its Google group and Play test track).
+  // Maaji has no Android test track yet, so the page does not exist here.
+  if (!process.env.ANDROID_BETA_ENABLED) notFound();
   return (
     <main className="flex min-h-screen flex-col items-center bg-cream px-4 py-10 text-center text-ink sm:py-14">
       {/* eslint-disable-next-line @next/next/no-img-element */}

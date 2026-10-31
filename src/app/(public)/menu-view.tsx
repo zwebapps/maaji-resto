@@ -2068,8 +2068,13 @@ function HeroBanner({
               sticker lockup (owner, 2026-10-11). */}
           {resolveMenuTheme(venue.branding.theme).vars.nameColor ? (
             <span
-              className="block font-serif text-2xl leading-tight font-semibold tracking-[0.08em] uppercase drop-shadow-[0_2px_6px_rgba(0,0,0,0.75)] sm:text-4xl"
-              style={{ color: resolveMenuTheme(venue.branding.theme).vars.nameColor }}
+              className="block font-serif text-2xl leading-tight font-semibold uppercase"
+              style={{
+                color: resolveMenuTheme(venue.branding.theme).vars.nameColor,
+                letterSpacing: "0.08em",
+                fontSize: "clamp(1.5rem, 4vw, 2.25rem)",
+                textShadow: "0 2px 6px rgba(0,0,0,0.75)",
+              }}
             >
               {venue.name}
             </span>
@@ -2339,12 +2344,20 @@ function VenueMark({
           {/* A theme with its own name colour (Maaji) sets the name like its
               app header: serif capitals, tracked, in that colour. Every other
               theme keeps the small italic in the page text colour. */}
+          {/* Inline style, not new utility classes: the guest page's
+              stylesheet budget (lighthouserc.json) has no bytes to spare. */}
           <span
-            className={`block min-w-0 truncate font-serif leading-tight text-[var(--menu-name,var(--menu-text))] ${
+            className={`block min-w-0 truncate font-serif text-lg leading-tight ${
               resolveMenuTheme(venue.branding.theme).vars.nameColor
-                ? "text-lg font-semibold uppercase tracking-[0.08em]"
-                : "text-lg italic"
+                ? "font-semibold uppercase"
+                : "italic"
             }`}
+            style={{
+              color: "var(--menu-name, var(--menu-text))",
+              letterSpacing: resolveMenuTheme(venue.branding.theme).vars.nameColor
+                ? "0.08em"
+                : undefined,
+            }}
           >
             {venue.name}
           </span>
