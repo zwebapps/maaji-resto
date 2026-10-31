@@ -66,7 +66,7 @@ describe("legal MDX content files", () => {
     "%s.mdx names the restaurant",
     async (name) => {
       const src = await readLegalMdx(name);
-      expect(src).toContain("Maaji Restaurant");
+      expect(src).toContain("MAA Ji");
     },
   );
 

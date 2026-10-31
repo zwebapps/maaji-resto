@@ -37,7 +37,7 @@ run scripts/seed-platform-admin.ts | tail -1
 echo "→ logo"
 run scripts/set-venue-logo.ts "$SLUG" public/brand/maaji-logo.png | grep -E "stored|size" || true
 
-echo "→ theme, appearance, hours, ordering, loyalty, gift cards"
+echo "→ theme, appearance, contact, hours, ordering, loyalty, gift cards"
 psql_maaji <<SQL
 UPDATE venues SET
   branding = branding || '{
@@ -58,13 +58,14 @@ UPDATE venues SET
   }}'::jsonb,
   ordering = '{"dineIn": true, "delivery": true, "takeaway": true, "pausedUntil": null,
     "deliveryZips": [], "notifyEmails": [], "reservations": true,
-    "deliveryAreas": [{"zip": "78467", "feeCents": 0, "locality": "Konstanz", "minCents": 0, "freeOverCents": 0}],
+    "deliveryAreas": [],
     "acceptedPayments": ["cash", "girocard", "visa", "mastercard"], "appCancelEnabled": false,
     "deliveryFeeCents": 0, "deliveryMinCents": 0, "etaAcceptSeconds": 30, "etaPickupMinutes": 20,
     "issueWindowHours": 3, "cashCancelMinutes": 10, "etaDeliveryMinutes": 50, "orderDiscountPercent": 0}'::jsonb,
   loyalty = '{"enabled": true, "rewardPoints": 100, "minOrderCents": 2000, "pointsPerOrder": 5,
     "rewardValueCents": 2000, "voucherExpiryMonths": 0}'::jsonb,
   gift_cards = '{"enabled": true, "expiryMonths": 36}'::jsonb,
+  contact = '{"landline": "+4976151466424", "email": "gw5dqcto@kontakt-ordersmart.de"}'::jsonb,
   "updatedAt" = now()
 WHERE slug = '$SLUG';
 SQL
