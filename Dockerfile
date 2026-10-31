@@ -58,7 +58,7 @@ RUN DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build?schema=public" \
 # time (the runner stage below re-declares it for /admin/system).
 ARG GIT_SHA=""
 ENV GIT_SHA=$GIT_SHA
-ARG NEXT_PUBLIC_APP_BRAND_NAME="Rangla Punjab"
+ARG NEXT_PUBLIC_APP_BRAND_NAME="Maaji Restaurant"
 ARG NEXT_PUBLIC_APP_BRAND_TAGLINE=""
 ENV NEXT_PUBLIC_APP_BRAND_NAME=$NEXT_PUBLIC_APP_BRAND_NAME \
     NEXT_PUBLIC_APP_BRAND_TAGLINE=$NEXT_PUBLIC_APP_BRAND_TAGLINE
