@@ -5,8 +5,11 @@
 #   # database on its OWN VPS, reached over the private network:
 #   sudo ./deploy/setup-db.sh --app-ip 10.0.0.1 --db-ip 10.0.0.2 --restore maaji.dump
 #
-#   # database on the SAME VPS as the app (the app's Docker containers):
+#   # database on the SAME VPS as the app, app running in Docker:
 #   sudo ./deploy/setup-db.sh --app-ip local --restore maaji.dump
+#
+#   # database on the SAME VPS as the app, app running natively (no Docker):
+#   sudo ./deploy/setup-db.sh --app-ip localhost --restore maaji.dump
 #
 # What it does (idempotent — safe to re-run; it never drops anything):
 #   1. installs PostgreSQL 16 (+ the PGDG repo when the OS lacks 16)
@@ -46,11 +49,11 @@ done
 
 die() { echo "✗ $*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo)"
-[ -n "$APP_IP" ] || die "--app-ip is required: the app VPS's private IP, or 'local'"
+[ -n "$APP_IP" ] || die "--app-ip is required: the app VPS's private IP, 'local' (app in Docker here) or 'localhost' (app native here)"
 [[ "$DB_NAME" =~ ^[a-z_][a-z0-9_]*$ && "$DB_USER" =~ ^[a-z_][a-z0-9_]*$ ]] \
   || die "--db-name/--db-user: lowercase letters, digits and _ only"
-if [ "$APP_IP" != "local" ]; then
-  [[ "$APP_IP" =~ ^[0-9.]+$ ]] || die "--app-ip must be an IPv4 address or 'local'"
+if [ "$APP_IP" != "local" ] && [ "$APP_IP" != "localhost" ]; then
+  [[ "$APP_IP" =~ ^[0-9.]+$ ]] || die "--app-ip must be an IPv4 address, 'local' or 'localhost'"
   [ -n "$DB_IP" ] || die "--db-ip (this server's private IP) is required with a remote --app-ip"
 fi
 if [ -n "${DB_OWNER_PASSWORD:-}" ]; then
@@ -81,7 +84,12 @@ CONF_DIR="/etc/postgresql/$PGV/main"
 [ -d "$CONF_DIR" ] || die "no cluster at $CONF_DIR"
 
 # ── 2. Network + monitoring ─────────────────────────────────────────────
-if [ "$APP_IP" = "local" ]; then
+if [ "$APP_IP" = "localhost" ]; then
+  # The app runs natively on this host: nothing but loopback ever connects.
+  LISTEN="localhost"
+  ALLOW="127.0.0.1/32"
+  DB_HOST_FOR_APP="127.0.0.1"
+elif [ "$APP_IP" = "local" ]; then
   # The app runs in Docker on this host. Containers reach the host on the
   # docker0 bridge address; Compose networks live inside 172.16.0.0/12.
   command -v docker >/dev/null || die "--app-ip local needs Docker installed first (the app runs in it)"
@@ -105,12 +113,17 @@ password_encryption = 'scram-sha-256'
 CONF
 HBA="$CONF_DIR/pg_hba.conf"
 HBA_LINE="host  $DB_NAME  $DB_USER  $ALLOW  scram-sha-256"
-sed -i '/# maaji: app access (setup-db.sh)/,+1d' "$HBA"
-printf '# maaji: app access (setup-db.sh)\n%s\n' "$HBA_LINE" >> "$HBA"
+sed -i '/# maaji: app access (setup-db.sh)/,/# maaji: end/d' "$HBA"
+{
+  echo "# maaji: app access (setup-db.sh)"
+  echo "$HBA_LINE"
+  [ "$APP_IP" = "localhost" ] && echo "host  $DB_NAME  $DB_USER  ::1/128  scram-sha-256"
+  echo "# maaji: end"
+} >> "$HBA"
 systemctl restart postgresql
 systemctl enable postgresql >/dev/null 2>&1 || true
 
-if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+if [ "$APP_IP" != "localhost" ] && command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   if [ "$APP_IP" = "local" ]; then ufw allow from 172.16.0.0/12 to any port 5432 proto tcp >/dev/null
   else ufw allow from "$APP_IP" to any port 5432 proto tcp >/dev/null; fi
 fi
