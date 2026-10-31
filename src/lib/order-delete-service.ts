@@ -1,5 +1,6 @@
 import { prisma } from "./db";
-import { recordOrderEventTx } from "./order-events";
+import { orderLabel } from "./order-label";
+import { recordForOrder, recordOrderEventTx } from "./order-events";
 import { createLogger } from "./logger";
 import { getAccess } from "./team-access";
 import { asUser } from "./tenant";
@@ -31,7 +32,9 @@ export async function deleteOrder(
   userId: string,
   orderId: string,
   reasonRaw: string,
-): Promise<{ ok: true; orderNumber: number } | { ok: false; error: DeleteOrderError }> {
+): Promise<
+  { ok: true; orderNumber: number; orderLabel: string } | { ok: false; error: DeleteOrderError }
+> {
   const access = await getAccess(userId);
   if (!access?.isOwner) return { ok: false, error: "forbidden" };
   const reason = reasonRaw.trim().slice(0, DELETE_REASON_MAX);
@@ -39,7 +42,22 @@ export async function deleteOrder(
 
   const actor = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
 
-  return asUser(userId, async (tx) => {
+  // Stop any card payment still open on it first: an open page is expired
+  // and a reserved (authorized) amount released, so a deleted order can
+  // never take money afterwards. Never captured on the way out.
+  const { releaseSupersededStripePayment } = await import("./connect-service");
+  const refBefore = await asUser(userId, async (tx) => {
+    const o = await tx.order.findFirst({
+      where: { id: orderId },
+      select: { paymentRef: true, paymentProvider: true },
+    });
+    return o?.paymentProvider === "stripe" ? o.paymentRef : null;
+  });
+  const released = await releaseSupersededStripePayment(access.tenantId, orderId, {
+    settle: false,
+  });
+
+  const result = await asUser(userId, async (tx) => {
     // RLS scopes this to the owner's own restaurant: another tenant's
     // order id is simply not found.
     const order = await tx.order.findFirst({
@@ -93,16 +111,40 @@ export async function deleteOrder(
     // Lines and any complaint thread cascade; loyalty ledger lines keep
     // their history with the order reference cleared (SET NULL).
     await tx.order.delete({ where: { id: order.id } });
+    // Its bell entries go too: a deleted order must not keep surfacing.
+    await tx.staffNotification.deleteMany({
+      where: { data: { path: ["orderId"], equals: order.id } },
+    });
     log.info("order.deleted", { orderId: order.id, orderNumber: order.orderNumber, userId });
-    return { ok: true as const, orderNumber: order.orderNumber };
+    return {
+      ok: true as const,
+      orderNumber: order.orderNumber,
+      orderLabel: orderLabel(order),
+    };
   });
+
+  if (result.ok && released === "paid" && refBefore) {
+    // Money already taken (a card page from before authorize-only): the
+    // order is gone, so the settlement records it against the deleted order
+    // as needing a refund.
+    const { processStripeOrderPayment } = await import("./connect-service");
+    await processStripeOrderPayment(access.tenantId, refBefore, { orderId, source: "delete" });
+  }
+  if (result.ok && released === "processing") {
+    void recordForOrder(access.tenantId, orderId, {
+      kind: "payment.needs_resolution",
+      actor: "system",
+      summary: "The card payment was still processing when the order was deleted — check Stripe",
+    });
+  }
+  return result;
 }
 
 export interface DeletedOrderRow {
   id: string;
   orderNumber: number;
   /** "B" (cash) / "O" (online); null on older orders. */
-  orderSeries?: string | null;
+  orderSeries: string | null;
   orderType: string;
   totalCents: number;
   currency: string;
@@ -129,6 +171,7 @@ export async function listDeletedOrders(
   return rows.map((r) => ({
     id: r.id,
     orderNumber: r.orderNumber,
+    orderSeries: r.orderSeries ?? null,
     orderType: r.orderType,
     totalCents: r.totalCents,
     currency: r.currency,

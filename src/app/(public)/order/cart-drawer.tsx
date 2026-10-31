@@ -31,7 +31,7 @@ interface PlacedOrder {
   orderId: string;
   orderNumber: number;
   /** "B" (cash) / "O" (online); null on older orders. */
-  orderSeries?: string | null;
+  orderSeries: string | null;
   totalCents: number;
   currency: string;
   receiptToken: string;
@@ -134,6 +134,9 @@ export interface DrawerModes {
   deliveryMinCents: number;
   /** Percent off the food of every order (owner setting); 0/absent = none. */
   orderDiscountPercent?: number;
+  /** Cash for pickup / delivery (owner switch); absent = accepted. */
+  cashTakeaway?: boolean;
+  cashDelivery?: boolean;
 }
 
 /** What the drawer needs to talk about points. Mirrors the `loyalty`
@@ -512,9 +515,21 @@ export function CartDrawer({
   // available; card/PayPal only when the restaurant can take them.
   // P7-13: the list only CHOOSES now, so it needs a sensible default —
   // the first rail the venue actually offers, mirroring the app.
-  const [payMethod, setPayMethod] = useState<PayMethod>(
+  const [pickedPay, setPayMethod] = useState<PayMethod>(
     onlinePayment ? "card" : paypalPayment ? "paypal" : "cash",
   );
+  // The owner may switch cash off for pickup / delivery (card or PayPal
+  // only): then it is not offered at all, and the server refuses it too.
+  // Switching the order type while "cash" is picked moves the pick to the
+  // first online rail.
+  const cashOk =
+    orderType === "takeaway"
+      ? modes.cashTakeaway !== false
+      : orderType === "delivery"
+        ? modes.cashDelivery !== false
+        : true;
+  const payMethod: PayMethod =
+    pickedPay === "cash" && !cashOk ? (onlinePayment ? "card" : "paypal") : pickedPay;
   const [street, setStreet] = useState("");
   const [zip, setZip] = useState("");
   const [note, setNote] = useState("");
@@ -750,6 +765,8 @@ export function CartDrawer({
   const payBlocked =
     busy ||
     typeMissing ||
+    // Cash switched off for this type and no online rail to take its place.
+    (!cashOk && !onlinePayment && !paypalPayment) ||
     paused ||
     count === 0 ||
     detailsMissing ||
@@ -1072,6 +1089,19 @@ export function CartDrawer({
                 >
                   {payStarting ? t.openingPaypal : t.payWithPaypal}
                 </button>
+              ) : null}
+              {hasPaymentCta ? (
+                <p
+                  role="status"
+                  className={
+                    "text-center text-xs " +
+                    (payStarting
+                      ? "font-semibold text-[var(--menu-surface-text,var(--menu-text))]"
+                      : "text-[var(--menu-surface-text-soft,var(--menu-text-soft))]")
+                  }
+                >
+                  {payStarting ? t.payKeepWindowOpen : t.payRedirectNote}
+                </p>
               ) : null}
               {/* One dominant fill, then a wash, then text links. This stack
                   used to be four solid fills plus an outline, so nothing led
@@ -1621,7 +1651,7 @@ export function CartDrawer({
                         },
                       ]
                     : []),
-                  { key: "cash" as const, label: cashLabel, marks: [] },
+                  ...(cashOk ? [{ key: "cash" as const, label: cashLabel, marks: [] }] : []),
                 ];
                 return (
                   <div className="mt-4">
@@ -1750,6 +1780,22 @@ export function CartDrawer({
                           : t.opening
                         : `${payMethod === "cash" ? t.placeOrder : t.pay} · ${money(total)}`}
                     </button>
+                    {/* Card / PayPal leave this page for the provider's: say
+                        so up front, and louder while it opens, so nobody
+                        closes the tab mid-payment (owner, 2026-10-19). */}
+                    {payMethod !== "cash" ? (
+                      <p
+                        role="status"
+                        className={
+                          "mt-2 text-center text-xs " +
+                          (busy
+                            ? "font-semibold text-[var(--menu-surface-text,var(--menu-text))]"
+                            : "text-[var(--menu-surface-text-soft,var(--menu-text-soft))]")
+                        }
+                      >
+                        {busy ? t.payKeepWindowOpen : t.payRedirectNote}
+                      </p>
+                    ) : null}
                   </div>
                 );
               })()}

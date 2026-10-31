@@ -1,4 +1,5 @@
 import { parseOrderingConfig } from "./ordering-config";
+import { orderCode } from "./order-code";
 import { activePauseUntil, setOrderingPause } from "./ordering-pause";
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
@@ -240,8 +241,14 @@ describe("order-service (guest self-ordering)", () => {
     const cash2 = await placeOrder(fx, { items: naan });
     const paypal = await placeOrder(fx, { items: naan, intendedPayment: "paypal" });
     if (!cash1.ok || !card1.ok || !cash2.ok || !paypal.ok) throw new Error("placement failed");
-    expect([cash1, cash2].map((r) => r.value.orderLabel)).toEqual(["B-1", "B-2"]);
-    expect([card1, paypal].map((r) => r.value.orderLabel)).toEqual(["O-1", "O-2"]);
+    expect([cash1, cash2].map((r) => r.value.orderLabel)).toEqual([
+      orderCode("B", 1),
+      orderCode("B", 2),
+    ]);
+    expect([card1, paypal].map((r) => r.value.orderLabel)).toEqual([
+      orderCode("O", 1),
+      orderCode("O", 2),
+    ]);
   });
 
   it("keeps an optional receipt email (lower-cased) and rejects a malformed one", async () => {
@@ -651,6 +658,33 @@ describe("order-service (guest self-ordering)", () => {
     expect(forged).toEqual({ ok: false, error: "type_not_available" });
   });
 
+  it("refuses cash for pickup when the owner switched it off; card still goes through", async () => {
+    const fx = await fixtureVenue();
+    await asTenant(fx.tenantId, (tx) =>
+      tx.venue.update({ where: { id: fx.venueId }, data: { ordering: { cashTakeaway: false } } }),
+    );
+    const pickup = {
+      orderType: "takeaway" as const,
+      customerName: "A",
+      customerPhone: "1",
+      items: [{ itemId: fx.itemIds.pakora, quantity: 1 }],
+    };
+    // Absent payment has always meant cash — refused the same way.
+    expect(await placeOrder(fx, pickup)).toEqual({ ok: false, error: "cash_not_available" });
+    expect(await placeOrder(fx, { ...pickup, intendedPayment: "cash" })).toEqual({
+      ok: false,
+      error: "cash_not_available",
+    });
+    const card = await placeOrder(fx, { ...pickup, intendedPayment: "card" });
+    expect(card.ok).toBe(true);
+    // Dine-in is not affected by the pickup switch.
+    const table = await placeOrder(fx, {
+      orderType: "dine_in",
+      items: [{ itemId: fx.itemIds.pakora, quantity: 1 }],
+    });
+    expect(table.ok).toBe(true);
+  });
+
   it("enforces delivery zone + minimum and adds the fee as a line", async () => {
     const fx = await fixtureVenue();
     await asTenant(fx.tenantId, async (tx) => {
@@ -1035,6 +1069,34 @@ describe("order-service (guest self-ordering)", () => {
       };
     });
   }
+
+  it("cash switched off: a signed-in guest in the app may still pay cash, nobody else", async () => {
+    const fx = await loyaltyFixture();
+    await asTenant(fx.tenantId, (tx) =>
+      tx.venue.update({ where: { id: fx.venueId }, data: { ordering: { cashTakeaway: false } } }),
+    );
+    const pickup = {
+      orderType: "takeaway" as const,
+      customerName: "A",
+      customerPhone: "1",
+      intendedPayment: "cash" as const,
+      items: [{ itemId: fx.itemId, quantity: 1 }],
+    };
+    const appSignedIn = await placeOrder(fx, pickup, {
+      customerId: fx.customerId,
+      channel: "app",
+    });
+    expect(appSignedIn.ok).toBe(true);
+    // Same customer on the website, and an anonymous app guest: refused.
+    expect(await placeOrder(fx, pickup, { customerId: fx.customerId, channel: "web" })).toEqual({
+      ok: false,
+      error: "cash_not_available",
+    });
+    expect(await placeOrder(fx, pickup, { customerId: null, channel: "app" })).toEqual({
+      ok: false,
+      error: "cash_not_available",
+    });
+  });
 
   it("cancels an open order and gives the redeemed voucher back", async () => {
     const fx = await loyaltyFixture();

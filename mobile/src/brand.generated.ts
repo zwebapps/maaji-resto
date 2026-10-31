@@ -13,7 +13,7 @@ export const brand = {
   themeId: "maaji-emerald",
   /** The venue advertises a halal kitchen (`branding.halalFilter === "on"`).
    *  Gates the calligraphic حلال mark on the welcome screen. */
-  halal: false,
+  halal: true,
 } as const;
 
 export const colors = {

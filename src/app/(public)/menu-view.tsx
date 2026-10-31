@@ -601,6 +601,20 @@ export function MenuView({
                     key={cat.id}
                     data-category-id={cat.id}
                     hidden={activeCat ? cat.id !== activeCat : undefined}
+                    // Sections below the first two are laid out only when
+                    // they near the screen: ~250 dish cards made a phone
+                    // spend ~0.7 s on layout before the first paint. The
+                    // placeholder height is a rough guess from the dish
+                    // count (so the scrollbar does not jump); `auto` then
+                    // remembers the real height once a section has rendered.
+                    style={
+                      catIndex >= 2
+                        ? {
+                            contentVisibility: "auto",
+                            containIntrinsicSize: `auto ${160 + cat.items.length * 150}px`,
+                          }
+                        : undefined
+                    }
                   >
                     <Section
                       cat={cat}
@@ -849,6 +863,9 @@ export function MenuView({
               aria-label={t.footer.legal}
               className="flex flex-wrap items-center justify-center gap-x-6 gap-y-1"
             >
+              <Link href="/ueber-uns" className="underline underline-offset-4 hover:no-underline">
+                {t.about.aria}
+              </Link>
               <Link
                 href="/legal/impressum"
                 className="underline underline-offset-4 hover:no-underline"
@@ -1406,7 +1423,9 @@ function GridDishCard({
         <img
           src={src}
           srcSet={srcSet}
-          alt=""
+          // The dish name, for image search; the wrapper is aria-hidden, so
+          // screen readers still hear the name only once (from the card).
+          alt={item.name}
           loading={priority ? "eager" : "lazy"}
           fetchPriority={priority ? "high" : undefined}
           className="absolute inset-0 h-full w-full object-cover"
@@ -1607,7 +1626,9 @@ function ListDishRow({
         <img
           src={menuImageUrl(item.photoKey, item.id, 320)}
           srcSet={menuImageSrcSet(item.photoKey, item.id, 320)}
-          alt=""
+          // The dish name, for image search; the wrapper is aria-hidden, so
+          // screen readers still hear the name only once (from the card).
+          alt={item.name}
           loading={priority ? "eager" : "lazy"}
           fetchPriority={priority ? "high" : undefined}
           className="absolute inset-0 h-full w-full object-cover"
@@ -1804,7 +1825,9 @@ function ShowcaseDishCard({
         <img
           src={src}
           srcSet={srcSet}
-          alt=""
+          // The dish name, for image search; the wrapper is aria-hidden, so
+          // screen readers still hear the name only once (from the card).
+          alt={item.name}
           loading={priority ? "eager" : "lazy"}
           fetchPriority={priority ? "high" : undefined}
           className="absolute inset-0 h-full w-full object-cover"
@@ -1975,12 +1998,32 @@ function HeroBanner({
         srcSet={bannerSrcSet(venue.branding.bannerKey!)}
         sizes="100vw"
         alt=""
+        // The page's largest paint on every device: fetch it first, ahead
+        // of the dish photos (mobile LCP was 5.8 s, owner 2026-10-20).
+        fetchPriority="high"
         className="absolute inset-0 h-full w-full object-cover object-center"
       />
       <div
         aria-hidden="true"
         className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/5 to-black/30"
       />
+      {/* The banner is the app poster with store buttons drawn into it
+          (owner, 2026-10-19): the whole picture opens `/app`, which sends
+          an iPhone to the App Store, an Android phone to Google Play or
+          the download. Phones and tablets only (`lg:hidden`, owner
+          2026-10-19): on a laptop the banner stays a picture. A plain
+          link, so it works without JavaScript; the badges below sit on
+          top of it and keep their own clicks. */}
+      {venue.appLinks ? (
+        // A plain <a>: `/app` is a redirect route, not a page <Link> could
+        // prefetch.
+        // eslint-disable-next-line @next/next/no-html-link-for-pages
+        <a
+          href="/app"
+          aria-label={t.app.title}
+          className="absolute inset-0 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-white lg:hidden"
+        />
+      ) : null}
       {/* Badge stack, top corner: open/closed, then reserve, then the
           rating, then the app jump. P7-14 — the rating pill hangs off the
           reserve button rather than the identity, which keeps the
@@ -2448,7 +2491,9 @@ function DishPhoto({
       <img
         src={src}
         srcSet={srcSet}
-        alt=""
+        // The dish name, for image search; the wrapper is aria-hidden, so
+        // screen readers still hear the name only once (from the card).
+        alt={item.name}
         loading={priority ? "eager" : "lazy"}
         fetchPriority={priority ? "high" : undefined}
         className="absolute inset-0 h-full w-full object-cover"

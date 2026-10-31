@@ -28,6 +28,7 @@ import {
   effectiveOrdering,
   orderDiscountCents,
   orderTypeAllowed,
+  cashAllowed,
   clampEtaMinutes,
   parseOrderingConfig,
   type OrderType,
@@ -183,7 +184,7 @@ export interface PlacedOrder {
   orderId: string;
   orderNumber: number;
   /** "B" (cash) / "O" (online); null on older orders. */
-  orderSeries?: string | null;
+  orderSeries: string | null;
   /** "B-12" / "O-7" — what every surface prints. */
   orderLabel?: string;
   /** What the guest owes: the basket AFTER any reward discount. Always
@@ -239,7 +240,8 @@ export type PlaceOrderResult =
         | "below_delivery_minimum"
         | "invalid_time"
         | "venue_closed"
-        | "venue_paused";
+        | "venue_paused"
+        | "cash_not_available";
     };
 
 /** "app" — the restaurant's phone app; "web" — the website. */
@@ -301,6 +303,20 @@ export async function placeOrder(
     const orderType: OrderType = input.orderType;
     if (!orderTypeAllowed(mode, orderType)) {
       return { ok: false, error: "type_not_available" as const };
+    }
+    // The owner switched cash off for pickup / delivery: those orders must
+    // be paid online. Checked before anything is claimed or written, and
+    // an absent payment counts as cash (that is what it has always meant).
+    // EXCEPT a signed-in guest in the app (owner, 2026-10-19): a known
+    // customer may still pay cash; the website and anonymous app guests
+    // may not.
+    const knownAppCustomer = opts?.channel === "app" && Boolean(opts?.customerId);
+    if (
+      (input.intendedPayment ?? "cash") === "cash" &&
+      !knownAppCustomer &&
+      !cashAllowed(mode, orderType)
+    ) {
+      return { ok: false, error: "cash_not_available" as const };
     }
     // The restaurant switched ordering off for now ("stop taking orders"):
     // nothing is accepted until it runs out, a planned order included.
@@ -762,7 +778,7 @@ export interface ReceiptOrder extends OrderFulfilment {
   venueId?: string;
   orderNumber: number;
   /** "B" (cash) / "O" (online); null on older orders. */
-  orderSeries?: string | null;
+  orderSeries: string | null;
   tableNumber: string | null;
   customerEmail: string | null;
   /** The signed-in guest's own UI language, when this order has one.
@@ -897,7 +913,7 @@ export interface KitchenOrder extends OrderFulfilment {
   id: string;
   orderNumber: number;
   /** "B" (cash) / "O" (online); null on older orders. */
-  orderSeries?: string | null;
+  orderSeries: string | null;
   /** "app" / "web"; null on older orders. */
   orderChannel?: string | null;
   tableNumber: string | null;
@@ -967,6 +983,9 @@ export interface RecentOrdersOptions {
   scope?: OrderScope;
   /** Only rows written at or after this instant (polling delta). */
   updatedSince?: Date;
+  /** Only orders PLACED at or after this instant — the app's board shows
+   *  the restaurant's current day only (owner, 2026-10-28). */
+  createdSince?: Date;
 }
 
 /** Newest orders for the kitchen screen. Any member of the tenant
@@ -981,18 +1000,20 @@ export async function listRecentOrders(
   const closed = [...TERMINAL_STATUSES];
   // Online orders reach the kitchen only once paid: an order still
   // awaiting (or having failed) its card / PayPal payment is not on the
-  // board, not printed and not counted (owner rule, 2026-09-21). The
-  // dashboard reads those separately via `scope: "awaiting_payment"`.
+  // board, not printed and not counted (owner rule, 2026-09-21) — and it
+  // stays out of every order list even once cancelled: only successful
+  // orders are listed, a payment the guest never completed lives in the
+  // order log alone (owner, 2026-10-19). `scope: "awaiting_payment"`
+  // still reads the open ones for anyone who asks.
   const unpaidOnline: Prisma.OrderWhereInput = { paymentStatus: { in: [...AWAITING_PAYMENT] } };
   const where: Prisma.OrderWhereInput =
     options.scope === "awaiting_payment"
       ? { ...unpaidOnline, status: { notIn: closed } }
-      : // Only OPEN unpaid-online orders are held back: once cancelled (or
-        // otherwise closed) they belong in the archive like any other.
-        { NOT: { ...unpaidOnline, status: { notIn: closed } } };
+      : { NOT: unpaidOnline };
   if (options.scope === "open") where.status = { notIn: closed };
   else if (options.scope === "closed") where.status = { in: closed };
   if (options.updatedSince) where.updatedAt = { gte: options.updatedSince };
+  if (options.createdSince) where.createdAt = { gte: options.createdSince };
 
   const rows = await asUser(userId, (tx) =>
     tx.order.findMany({
@@ -1255,7 +1276,7 @@ export interface OrderTracking {
   id: string;
   orderNumber: number;
   /** "B" (cash) / "O" (online); null on older orders. */
-  orderSeries?: string | null;
+  orderSeries: string | null;
   status: string;
   orderType: string;
   paymentStatus: string;

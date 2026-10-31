@@ -19,7 +19,9 @@ import { PrismaPg } from "@prisma/adapter-pg";
 const FIXTURE_NAME = /^t-[0-9a-f]{8}$/;
 
 export async function teardown(): Promise<void> {
-  const connectionString = process.env.DATABASE_URL;
+  // The suite runs against TEST_DATABASE_URL when set (vitest.setup.ts);
+  // clean up THAT database, never the dev one.
+  const connectionString = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!connectionString) return;
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
   try {

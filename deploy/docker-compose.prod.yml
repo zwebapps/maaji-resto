@@ -28,8 +28,10 @@
 # treating its worker/pgbouncer/imgproxy as orphans.
 #
 # Renaming also keeps the volumes apart. `elvoria-prod_uploads` holds
-# Guesto's customer images; Rangla must never mount it.
-name: rangla-prod
+# Guesto's customer images; Rangla must never mount it. Maaji is its own
+# stack again (`maaji-prod`): never share a project name with Rangla's
+# `rangla-prod`, or one deploy would replace the other restaurant's site.
+name: maaji-prod
 
 services:
   caddy:
@@ -48,7 +50,7 @@ services:
       - app
 
   app:
-    image: ${APP_IMAGE:-resto-app:latest}
+    image: ${APP_IMAGE:-maaji-app:latest}
     restart: unless-stopped
     env_file:
       - ../prod.env

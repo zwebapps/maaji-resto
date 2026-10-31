@@ -840,7 +840,7 @@ export default async function SettingsPage({
             maxLength={200}
             autoComplete="street-address"
             defaultValue={contact?.address ?? ""}
-            placeholder={"Fritz-Arnold-Str. 7\n78467 Konstanz"}
+            placeholder={"Musterstraße 1\n12345 Musterstadt"}
             className="mt-1 w-full border border-ink/30 bg-white px-3 py-2 text-sm outline-none focus:border-ink"
           />
         </label>
@@ -1581,6 +1581,37 @@ export default async function SettingsPage({
               </span>
             </label>
           </div>
+
+          <fieldset className="mt-4 border-t border-ink/10 pt-4">
+            <legend className="float-left w-full text-sm font-medium">Cash payment</legend>
+            <p className="clear-both pt-1 text-xs text-muted">
+              Untick to accept only <strong>card and PayPal</strong> for that order type — guests no
+              longer see &ldquo;Pay at pickup&rdquo; or &ldquo;Cash to driver&rdquo; on the website
+              or in the app. Guests signed in to the app can still choose cash. Dine-in guests can
+              always pay at the table. Only switch cash off while card or PayPal payments are set
+              up, or guests cannot order that way.
+            </p>
+            <div className="mt-3 flex flex-col gap-2 text-sm sm:flex-row sm:gap-6">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="cashTakeaway"
+                  defaultChecked={ordering.config.cashTakeaway}
+                  className="accent-orange"
+                />
+                <span>Accept cash for pickup</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="cashDelivery"
+                  defaultChecked={ordering.config.cashDelivery}
+                  className="accent-orange"
+                />
+                <span>Accept cash for delivery</span>
+              </label>
+            </div>
+          </fieldset>
 
           <fieldset className="mt-4 border-t border-ink/10 pt-4">
             <legend className="float-left w-full text-sm font-medium">

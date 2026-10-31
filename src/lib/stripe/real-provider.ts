@@ -1,5 +1,8 @@
 import Stripe from "stripe";
+import { paymentWaitMessage, stripeCheckoutLocale } from "../payment-wait-copy";
+import { checkoutExpiresAtSeconds } from "../payment-windows";
 import type {
+  CaptureResult,
   StripeCheckoutSessionRef,
   StripeCustomerRef,
   StripeEvent,
@@ -204,6 +207,7 @@ export class RealStripeProvider implements StripeProvider {
     successUrl: string;
     cancelUrl: string;
     payPageUrl: string;
+    locale?: string | null;
   }): Promise<OrderCheckoutRef> {
     const session = await this.stripe.checkout.sessions.create(
       {
@@ -219,9 +223,12 @@ export class RealStripeProvider implements StripeProvider {
           },
         ],
         payment_intent_data: { application_fee_amount: input.feeCents },
+        expires_at: checkoutExpiresAtSeconds(),
         metadata: { orderId: input.orderId, tenantId: input.tenantId },
         success_url: input.successUrl,
         cancel_url: input.cancelUrl,
+        locale: stripeCheckoutLocale(input.locale),
+        custom_text: { submit: { message: paymentWaitMessage(input.locale) } },
       },
       { stripeAccount: input.accountId },
     );
@@ -237,6 +244,7 @@ export class RealStripeProvider implements StripeProvider {
     successUrl: string;
     cancelUrl: string;
     payPageUrl: string;
+    locale?: string | null;
   }): Promise<OrderCheckoutRef> {
     // No stripeAccount header + no application fee: this client IS the
     // restaurant's own account, so the charge settles 100% to them.
@@ -253,8 +261,25 @@ export class RealStripeProvider implements StripeProvider {
         },
       ],
       metadata: { orderId: input.orderId, tenantId: input.tenantId },
+      // Authorize only: the card is reserved, and the money moves when the
+      // server captures it after checking the order is still wanted, unpaid
+      // and within the 45-minute window (payment-settlement.ts). Otherwise
+      // the reservation is released and the guest is never charged.
+      // NO orderId metadata on the intent (production bug, 2026-10-21):
+      // the order's payment is the SESSION (cs_…); intent events carrying
+      // the order id were processed under the pi_… ref, which matches no
+      // attempt, and that path released — cancelled — the guest's payment
+      // a moment before the session event captured it. Session events are
+      // the web flow's only trigger.
+      payment_intent_data: { capture_method: "manual" },
+      // Payable for 30 minutes, not Stripe's default 24 hours.
+      expires_at: checkoutExpiresAtSeconds(),
       success_url: input.successUrl,
       cancel_url: input.cancelUrl,
+      // The guest's language, and the "don't close this window" line next
+      // to Stripe's Pay button (owner, 2026-10-19).
+      locale: stripeCheckoutLocale(input.locale),
+      custom_text: { submit: { message: paymentWaitMessage(input.locale) } },
     });
     return { ref: session.id, url: session.url ?? input.cancelUrl };
   }
@@ -276,6 +301,9 @@ export class RealStripeProvider implements StripeProvider {
       amount: input.amountCents,
       currency: input.currency.toLowerCase(),
       automatic_payment_methods: { enabled: true },
+      // An order is authorized only and captured by the server after its
+      // checks (as on the web); a gift card is a plain sale, taken at once.
+      capture_method: input.orderId && !input.giftCardId ? "manual" : "automatic",
       description: input.label,
       // Exactly one of orderId / giftCardId, as distinct keys — the
       // webhook branches on which is present, so a gift-card purchase can
@@ -292,8 +320,47 @@ export class RealStripeProvider implements StripeProvider {
 
   async retrievePaymentIntent(ref: string): Promise<PaymentIntentState | null> {
     try {
-      const pi = await this.stripe.paymentIntents.retrieve(ref);
-      return { status: pi.status, amountCents: pi.amount, currency: pi.currency.toUpperCase() };
+      if (ref.startsWith("cs_")) {
+        // A web order's ref is its Checkout Session, not an intent: read
+        // the session (and its intent) so verify / reconcile / the payment
+        // switch see what the webhook may never have delivered (O-6).
+        const session = await this.stripe.checkout.sessions.retrieve(ref, {
+          expand: ["payment_intent.latest_charge"],
+        });
+        const pi = typeof session.payment_intent === "object" ? session.payment_intent : null;
+        const status =
+          session.payment_status === "paid"
+            ? "succeeded"
+            : pi?.status === "requires_capture"
+              ? "requires_capture"
+              : session.status === "expired" || pi?.status === "canceled"
+                ? "canceled"
+                : session.status === "complete"
+                  ? "processing"
+                  : "requires_payment_method";
+        return {
+          status,
+          amountCents:
+            pi?.status === "requires_capture" ? pi.amount_capturable : (session.amount_total ?? 0),
+          currency: (session.currency ?? "").toUpperCase(),
+          authorizedAt: authorizedAtOf(pi),
+        };
+      }
+      const pi = await this.stripe.paymentIntents.retrieve(ref, { expand: ["latest_charge"] });
+      if (pi.status === "requires_capture") {
+        return {
+          status: pi.status,
+          amountCents: pi.amount_capturable,
+          currency: pi.currency.toUpperCase(),
+          authorizedAt: authorizedAtOf(pi),
+        };
+      }
+      return {
+        status: pi.status,
+        amountCents: pi.amount,
+        currency: pi.currency.toUpperCase(),
+        authorizedAt: authorizedAtOf(pi),
+      };
     } catch {
       // Unknown id on this account (or the wrong account's key): the caller
       // treats it as "cannot confirm", never as paid.
@@ -320,13 +387,54 @@ export class RealStripeProvider implements StripeProvider {
     }
   }
 
+  async capturePayment(ref: string): Promise<CaptureResult> {
+    try {
+      let piId = ref;
+      if (ref.startsWith("cs_")) {
+        const session = await this.stripe.checkout.sessions.retrieve(ref);
+        const id =
+          typeof session.payment_intent === "string"
+            ? session.payment_intent
+            : session.payment_intent?.id;
+        if (!id) return { captured: false, amountCents: 0, currency: "" };
+        piId = id;
+      }
+      let pi = await this.stripe.paymentIntents.retrieve(piId);
+      if (pi.status === "requires_capture") {
+        // The idempotency key makes a retried capture (webhook retry, two
+        // paths racing) a single capture on Stripe's side too.
+        pi = await this.stripe.paymentIntents.capture(
+          piId,
+          {},
+          { idempotencyKey: `capture-${piId}` },
+        );
+      }
+      return pi.status === "succeeded"
+        ? { captured: true, amountCents: pi.amount_received, currency: pi.currency.toUpperCase() }
+        : { captured: false, amountCents: 0, currency: pi.currency.toUpperCase() };
+    } catch {
+      return { captured: false, amountCents: 0, currency: "" };
+    }
+  }
+
   async cancelPayment(ref: string): Promise<boolean> {
     try {
       if (ref.startsWith("cs_")) {
-        const session = await this.stripe.checkout.sessions.retrieve(ref);
-        if (session.status === "complete") return false;
-        if (session.status === "open") await this.stripe.checkout.sessions.expire(ref);
-        return true;
+        const session = await this.stripe.checkout.sessions.retrieve(ref, {
+          expand: ["payment_intent"],
+        });
+        if (session.status === "open") {
+          await this.stripe.checkout.sessions.expire(ref);
+          return true;
+        }
+        if (session.status === "expired") return true;
+        // Complete: only an uncaptured reservation can still be released.
+        const pi = typeof session.payment_intent === "object" ? session.payment_intent : null;
+        if (pi?.status === "requires_capture") {
+          await this.stripe.paymentIntents.cancel(pi.id);
+          return true;
+        }
+        return pi?.status === "canceled";
       }
       const pi = await this.stripe.paymentIntents.retrieve(ref);
       if (pi.status === "canceled") return true;
@@ -340,4 +448,15 @@ export class RealStripeProvider implements StripeProvider {
       return false;
     }
   }
+}
+
+/**
+ * When the guest authorized: the creation time of the intent's charge
+ * (Stripe creates it when the card is reserved). Null when there is none
+ * yet or it was not expanded.
+ */
+function authorizedAtOf(pi: Stripe.PaymentIntent | null): Date | null {
+  const charge = pi?.latest_charge;
+  if (!charge || typeof charge === "string") return null;
+  return new Date(charge.created * 1000);
 }

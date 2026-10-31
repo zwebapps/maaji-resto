@@ -8,6 +8,7 @@
 #                                restaurant (idempotent — safe to re-run)
 #   ./deploy/deploy.sh release   build → migrate → seed → up  (normal path;
 #                                every deploy comes up with a default menu)
+#   ./deploy/deploy.sh uploads F load menu photos (scripts/export-maaji-data.sh)
 #   ./deploy/deploy.sh owner     make the restaurant owner's /dashboard login
 #                                match OWNER_EMAIL / OWNER_PASSWORD in prod.env
 #                                (seed only creates it once; this resets it)
@@ -30,21 +31,21 @@ case "${1:-}" in
     # missing SHA must not abort a release.
     GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
     BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    IMAGE="${APP_IMAGE:-rangla-app:latest}"
+    IMAGE="${APP_IMAGE:-maaji-app:latest}"
     echo "→ building ${IMAGE} from ${GIT_SHA} at ${BUILD_TIME}"
 
     # The brand vars are build-time (Next inlines NEXT_PUBLIC_* into the
     # client bundles), so they have to be passed here rather than in the
     # container environment — change the brand and you must rebuild.
     docker build \
-      --build-arg NEXT_PUBLIC_APP_BRAND_NAME="${NEXT_PUBLIC_APP_BRAND_NAME:-Rangla Punjab}" \
+      --build-arg NEXT_PUBLIC_APP_BRAND_NAME="${NEXT_PUBLIC_APP_BRAND_NAME:-Maaji Restaurant}" \
       --build-arg NEXT_PUBLIC_APP_BRAND_TAGLINE="${NEXT_PUBLIC_APP_BRAND_TAGLINE:-}" \
       --build-arg GIT_SHA="${GIT_SHA}" \
       --build-arg BUILD_TIME="${BUILD_TIME}" \
       -t "${IMAGE}" .
 
     # Second tag keyed on the commit, so `docker images` is a deploy history
-    # and a rollback is `APP_IMAGE=rangla-app:<sha> ./deploy/deploy.sh up`
+    # and a rollback is `APP_IMAGE=maaji-app:<sha> ./deploy/deploy.sh up`
     # rather than a rebuild of an older checkout.
     if [ "${GIT_SHA}" != "unknown" ]; then
       docker tag "${IMAGE}" "${IMAGE%%:*}:${GIT_SHA}"
@@ -72,7 +73,7 @@ case "${1:-}" in
     fi
     if [ -n "${DOZZLE_PASS}" ]; then
       DOZZLE_USER="${DOZZLE_USER:-admin}"
-      DOZZLE_USERS_DIR="${HOME:-/tmp}/.config/rangla"
+      DOZZLE_USERS_DIR="${HOME:-/tmp}/.config/maaji"
       mkdir -p "${DOZZLE_USERS_DIR}"
       DOZZLE_USERS_FILE="${DOZZLE_USERS_DIR}/dozzle-users.yml"
       if docker run --rm amir20/dozzle:latest generate \
@@ -218,6 +219,24 @@ case "${1:-}" in
     APP_DATABASE_URL="postgresql://${DB_OWNER_USER:-resto_user}:${DB_OWNER_PASSWORD}@${DB_HOST}:5432/${DB_NAME:-resto_database}?schema=public" \
       pnpm exec tsx scripts/launch-reset.ts
     ;;
+  payments)
+    # Payments that need a person (money taken but not accepted), plus
+    # captures not yet recorded. RESOLVE=<id> NOTE="…" marks one handled.
+    DATABASE_URL="postgresql://${DB_OWNER_USER:-resto_user}:${DB_OWNER_PASSWORD}@${DB_HOST}:5432/${DB_NAME:-resto_database}?schema=public" \
+    APP_DATABASE_URL="postgresql://${DB_OWNER_USER:-resto_user}:${DB_OWNER_PASSWORD}@${DB_HOST}:5432/${DB_NAME:-resto_database}?schema=public" \
+      pnpm exec tsx scripts/payments-report.ts
+    ;;
+  uploads)
+    # Load the menu photos packed by scripts/export-maaji-data.sh into the
+    # app's uploads volume (the pair of the DB restore in setup-db.sh).
+    #   ./deploy/deploy.sh uploads maaji-uploads.tgz
+    ARCHIVE="${2:-maaji-uploads.tgz}"
+    [ -f "$ARCHIVE" ] || { echo "$ARCHIVE not found"; exit 1; }
+    "${COMPOSE[@]}" cp "$ARCHIVE" app:/tmp/maaji-uploads.tgz
+    "${COMPOSE[@]}" exec -T -u 0 app sh -c \
+      'tar -xzf /tmp/maaji-uploads.tgz -C /app/public/uploads && chown -R 1001:1001 /app/public/uploads && rm /tmp/maaji-uploads.tgz'
+    echo "→ photos loaded: $("${COMPOSE[@]}" exec -T app sh -c 'find /app/public/uploads -type f | wc -l') files in the uploads volume"
+    ;;
   release)
     "$0" build
     "$0" migrate
@@ -226,6 +245,6 @@ case "${1:-}" in
     echo "Released. Now run the smoke test — docs/DEPLOY.md §9."
     ;;
   *)
-    echo "usage: $0 {build|migrate|up|seed|owner|dishes|dietary|slider|drinks|wines|testorders|launchreset|release}"; exit 1
+    echo "usage: $0 {build|migrate|up|seed|owner|uploads|dishes|dietary|slider|drinks|wines|testorders|launchreset|payments|release}"; exit 1
     ;;
 esac

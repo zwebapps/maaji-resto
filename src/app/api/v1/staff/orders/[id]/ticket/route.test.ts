@@ -196,8 +196,8 @@ describe("/api/v1/staff/orders/{id}/ticket", () => {
     expect(html).toContain("Dal Makhani");
     expect(html).toContain("IM RESTAURANT — TISCH 7");
     expect(html).toContain("GESAMT");
-    // The order number, plain — "#7", not "#0007" (owner, 2026-10-01).
-    expect(/<span>#B-[1-9]\d*<\/span>/.test(html)).toBe(true);
+    // The public order code (owner, 2026-10-22), never the internal number.
+    expect(/<span>MJ-[2-9A-HJKMNP-Z]{5}<\/span>/.test(html)).toBe(true);
 
     // Nothing the print WebView would have to fetch, and no Tailwind:
     // both print blank or unstyled on a tablet with no stylesheet.
@@ -229,5 +229,30 @@ describe("/api/v1/staff/orders/{id}/ticket", () => {
       expect(res.headers.get("Content-Type")).toContain("application/json");
       expect(await res.json()).toEqual({ ok: false, error: "not_found" });
     }
+  });
+
+  it("an AUTOMATIC print prints once in total: the second device gets 409, a manual print still works", async () => {
+    const id = await place(ours, { orderType: "dine_in", tableNumber: "9" });
+    const auto = (format = "") =>
+      GET(
+        new NextRequest(`http://localhost:3000/api/v1/staff/orders/${id}/ticket?auto=1${format}`, {
+          headers: { "x-staff-token": staffToken, "x-forwarded-for": ip },
+        }),
+        { params: Promise.resolve({ id }) },
+      );
+    expect((await auto()).status).toBe(200); // first device prints
+    const second = await auto("&format=escpos&paper=80"); // another device, Bluetooth
+    expect(second.status).toBe(409);
+    expect(await second.json()).toEqual({ ok: false, error: "already_printed" });
+    expect((await ticket(id)).status).toBe(200); // a person pressing Print
+    await new Promise((r) => setTimeout(r, 200)); // the manual log is fire-and-forget
+    const prints = await asTenant(ours.tenantId, (tx) =>
+      tx.orderEvent.findMany({
+        where: { orderId: id, kind: "order.printed" },
+        orderBy: { createdAt: "asc" },
+        select: { summary: true },
+      }),
+    );
+    expect(prints.map((p) => p.summary)).toEqual(["Printed (automatic)", "Printed"]);
   });
 });

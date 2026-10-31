@@ -1,4 +1,6 @@
 import { Prisma } from "@prisma/client";
+import { decodeOrderCode, displayOrderLabel } from "./order-code";
+import { internalOrderNumber } from "./order-label";
 import { asUser } from "./tenant";
 
 /**
@@ -20,6 +22,21 @@ export function parseOrderLogFilter(raw: string | undefined): OrderLogFilter {
   return (ORDER_LOG_FILTERS as readonly string[]).includes(raw ?? "")
     ? (raw as OrderLogFilter)
     : "all";
+}
+
+const RAIL_WORD: Record<string, string> = { card: "Card", paypal: "PayPal", cash: "Cash" };
+
+/**
+ * What the order was actually paid with, not only what the guest picked at
+ * checkout: O-6 was chosen as "card" and the log said "Card" while its
+ * payment then ran on PayPal. Same rail → the plain key ("card"); a switch
+ * → "PayPal (chose Card)".
+ */
+function paymentLabel(provider: unknown, intended: string | null): string {
+  const actual = provider === "stripe" ? "card" : provider === "paypal" ? "paypal" : null;
+  const chosen = intended ?? "cash";
+  if (!actual || actual === chosen) return chosen;
+  return `${RAIL_WORD[actual] ?? actual} (chose ${RAIL_WORD[chosen] ?? chosen})`;
 }
 
 export interface OrderLogRow {
@@ -100,10 +117,17 @@ export async function listOrderLog(
   return asUser(userId, async (tx) => {
     // The orders in the window (or matching the search), by latest event.
     const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    // A public code ("RP-K7M3Q", any case) is matched through the internal
+    // label the history stores ("O-12").
+    const decoded = q ? decodeOrderCode(q) : null;
+    const internal = decoded
+      ? internalOrderNumber({ orderNumber: decoded.orderNumber, orderSeries: decoded.series })
+      : ""; // "" never matches
     const ids = await tx.$queryRaw<{ order_id: string; last_at: Date }[]>(
       q
         ? Prisma.sql`SELECT order_id, max("createdAt") AS last_at FROM order_events
-            WHERE order_label ILIKE ${like} OR order_id = ${q} OR payload::text ILIKE ${like}
+            WHERE order_label ILIKE ${like} OR order_label = ${internal}
+               OR order_id = ${q} OR payload::text ILIKE ${like}
             GROUP BY order_id ORDER BY last_at DESC LIMIT ${opts.limit ?? 200}`
         : Prisma.sql`SELECT order_id, max("createdAt") AS last_at FROM order_events
             WHERE "createdAt" >= ${opts.from} AND "createdAt" < ${opts.to}
@@ -122,6 +146,7 @@ export async function listOrderLog(
           id: true,
           status: true,
           paymentStatus: true,
+          paymentProvider: true,
           totalCents: true,
           customerName: true,
           tableNumber: true,
@@ -138,7 +163,9 @@ export async function listOrderLog(
       const order = live.get(id);
       const placed = evs.find((e) => e.kind === "order.placed");
       const computed = asRecord(asRecord(placed?.payload).computed);
-      const label = [...evs].reverse().find((e) => e.order_label)?.order_label ?? id.slice(0, 8);
+      const label =
+        displayOrderLabel([...evs].reverse().find((e) => e.order_label)?.order_label) ??
+        id.slice(0, 8);
       return {
         orderId: id,
         label,
@@ -149,7 +176,7 @@ export async function listOrderLog(
           str(rec.customerName) ??
           (order?.tableNumber ? `Table ${order.tableNumber}` : str(rec.tableNumber)),
         orderType: str(rec.orderType),
-        payment: str(rec.intendedPayment) ?? "cash",
+        payment: paymentLabel(order?.paymentProvider, str(rec.intendedPayment)),
         channel: str(asRecord(placed?.payload).channel),
         totalCents:
           order?.totalCents ??
@@ -204,12 +231,14 @@ export async function getOrderLog(userId: string, orderId: string): Promise<Orde
     return {
       row: {
         orderId,
-        label: [...events].reverse().find((e) => e.order_label)?.order_label ?? orderId.slice(0, 8),
+        label:
+          displayOrderLabel([...events].reverse().find((e) => e.order_label)?.order_label) ??
+          orderId.slice(0, 8),
         firstAt: events[0]!.createdAt,
         lastAt: events[events.length - 1]!.createdAt,
         guest: str(src.customerName) ?? str(rec.customerName),
         orderType: str(src.orderType) ?? str(rec.orderType),
-        payment: str(rec.intendedPayment) ?? "cash",
+        payment: paymentLabel(src.paymentProvider, str(rec.intendedPayment)),
         channel: str(asRecord(placed?.payload).channel),
         totalCents:
           order?.totalCents ??

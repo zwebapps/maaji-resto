@@ -261,7 +261,8 @@ const en = {
   methodPaypal: "PayPal",
   methodCash: "Cash",
   payHintCard: "Secure card payment via Stripe.",
-  payHintPaypal: "You'll approve the payment in PayPal and return here.",
+  payHintPaypal:
+    "You'll approve the payment in PayPal and return here. Please don't close the PayPal window until the payment is confirmed.",
   payNow: "Pay",
   openingPayment: "Opening payment…",
   simulatePayment: "Simulate payment (test)",
@@ -298,6 +299,7 @@ const en = {
   payFailedNote: "Payment failed — please try again.",
   orderFailed: "Order failed — please try again.",
   orderingPaused: "Ordering is paused right now — please try again later.",
+  cashNotAvailable: "Cash isn't accepted for this order type — please pay by card or PayPal.",
   /* Closed right now: ASAP is off, pre-ordering for later today is not. */
   orderClosedNow: "We're closed right now — you can pre-order for later today.",
   orderClosedNoSlots: "We're closed right now, and there are no more times left today.",
@@ -441,7 +443,7 @@ const en = {
   ordersRewardOff: "−{value} reward",
   ordersRewardOffPoints: "−{value} reward · {points} points",
   rewardPointsSpent: "{points} points",
-  rewardsUsedOn: "Used on order #{number}",
+  rewardsUsedOn: "Used on order {number}",
   rewardsRedeemed: "{value} reward used",
 
   /* Gift cards */
@@ -511,7 +513,7 @@ const en = {
   giftCardTimelineBought: "Bought",
   giftCardTimelineShared: "Link opened",
   giftCardTimelineRedeemedCounter: "Redeemed at the restaurant",
-  giftCardTimelineRedeemedOrder: "Redeemed on order #{number}",
+  giftCardTimelineRedeemedOrder: "Redeemed on order {number}",
 
   ownerGiftCards: "Gift cards",
   ownerSales: "Daily sales",
@@ -803,7 +805,7 @@ const en = {
   staffCatEmpty: "No catering requests.",
   staffCatAnyTime: "Time open",
   boardDelete: "Delete",
-  boardDeleteTitle: "Delete order #{number}",
+  boardDeleteTitle: "Delete order {number}",
   boardDeleteHint:
     "Removes the order everywhere — for test orders and mistakes. The number, amount and reason stay in the deletion log.",
   boardDeleteReason: "Reason",
@@ -1267,7 +1269,8 @@ const de: Strings = {
   methodPaypal: "PayPal",
   methodCash: "Bar",
   payHintCard: "Sichere Kartenzahlung über Stripe.",
-  payHintPaypal: "Du bestätigst die Zahlung bei PayPal und kommst danach hierher zurück.",
+  payHintPaypal:
+    "Du bestätigst die Zahlung bei PayPal und kommst danach hierher zurück. Bitte schließe das PayPal-Fenster nicht, bevor die Zahlung bestätigt ist.",
   payNow: "Bezahlen",
   openingPayment: "Zahlung wird geöffnet…",
   simulatePayment: "Zahlung simulieren (Test)",
@@ -1303,6 +1306,7 @@ const de: Strings = {
   payFailedNote: "Zahlung fehlgeschlagen — bitte erneut versuchen.",
   orderFailed: "Bestellung fehlgeschlagen — bitte erneut versuchen.",
   orderingPaused: "Bestellungen sind gerade pausiert — bitte versuche es später.",
+  cashNotAvailable: "Barzahlung ist hierfür nicht möglich — bitte mit Karte oder PayPal bezahlen.",
   /* Gerade geschlossen: sofort geht nicht, vorbestellen schon. */
   orderClosedNow: "Wir haben gerade geschlossen – du kannst für später heute vorbestellen.",
   orderClosedNoSlots: "Wir haben gerade geschlossen, und für heute gibt es keine Zeiten mehr.",
@@ -1445,7 +1449,7 @@ const de: Strings = {
   ordersRewardOff: "−{value} Belohnung",
   ordersRewardOffPoints: "−{value} Belohnung · {points} Punkte",
   rewardPointsSpent: "{points} Punkte",
-  rewardsUsedOn: "Eingelöst bei Bestellung #{number}",
+  rewardsUsedOn: "Eingelöst bei Bestellung {number}",
   rewardsRedeemed: "Belohnung über {value} eingelöst",
 
   /* Geschenkgutscheine */
@@ -1513,7 +1517,7 @@ const de: Strings = {
   giftCardTimelineBought: "Gekauft",
   giftCardTimelineShared: "Link geöffnet",
   giftCardTimelineRedeemedCounter: "Im Restaurant eingelöst",
-  giftCardTimelineRedeemedOrder: "Bei Bestellung #{number} eingelöst",
+  giftCardTimelineRedeemedOrder: "Bei Bestellung {number} eingelöst",
 
   ownerGiftCards: "Geschenkgutscheine",
   ownerSales: "Tagesumsatz",
@@ -1806,7 +1810,7 @@ const de: Strings = {
   staffCatEmpty: "Keine Catering-Anfragen.",
   staffCatAnyTime: "Uhrzeit offen",
   boardDelete: "Löschen",
-  boardDeleteTitle: "Bestellung #{number} löschen",
+  boardDeleteTitle: "Bestellung {number} löschen",
   boardDeleteHint:
     "Entfernt die Bestellung überall – für Testbestellungen und Fehler. Nummer, Betrag und Grund bleiben im Löschprotokoll.",
   boardDeleteReason: "Grund",
@@ -2265,7 +2269,8 @@ const fr: Strings = {
   methodPaypal: "PayPal",
   methodCash: "Espèces",
   payHintCard: "Paiement par carte sécurisé via Stripe.",
-  payHintPaypal: "Vous validez le paiement sur PayPal, puis vous revenez ici.",
+  payHintPaypal:
+    "Vous validez le paiement sur PayPal, puis vous revenez ici. Ne fermez pas la fenêtre PayPal avant la confirmation du paiement.",
   payNow: "Payer",
   openingPayment: "Ouverture du paiement…",
   simulatePayment: "Simuler le paiement (test)",
@@ -2301,6 +2306,8 @@ const fr: Strings = {
   payFailedNote: "Le paiement a échoué — veuillez réessayer.",
   orderFailed: "La commande a échoué — veuillez réessayer.",
   orderingPaused: "Les commandes sont suspendues — veuillez réessayer plus tard.",
+  cashNotAvailable:
+    "Le paiement en espèces n'est pas accepté ici — veuillez payer par carte ou PayPal.",
   /* Fermé en ce moment : commander tout de suite est impossible, précommander non. */
   orderClosedNow: "Nous sommes fermés — vous pouvez précommander pour plus tard aujourd'hui.",
   orderClosedNoSlots: "Nous sommes fermés et il ne reste plus de créneau aujourd'hui.",
@@ -2444,7 +2451,7 @@ const fr: Strings = {
   ordersRewardOff: "−{value} récompense",
   ordersRewardOffPoints: "−{value} récompense · {points} points",
   rewardPointsSpent: "{points} points",
-  rewardsUsedOn: "Utilisée sur la commande #{number}",
+  rewardsUsedOn: "Utilisée sur la commande {number}",
   rewardsRedeemed: "Récompense de {value} utilisée",
 
   /* Cartes cadeaux */
@@ -2511,7 +2518,7 @@ const fr: Strings = {
   giftCardTimelineBought: "Achetée",
   giftCardTimelineShared: "Lien ouvert",
   giftCardTimelineRedeemedCounter: "Utilisée au restaurant",
-  giftCardTimelineRedeemedOrder: "Utilisée sur la commande #{number}",
+  giftCardTimelineRedeemedOrder: "Utilisée sur la commande {number}",
 
   ownerGiftCards: "Cartes cadeaux",
   ownerSales: "Ventes du jour",
@@ -3260,7 +3267,8 @@ const it: Strings = {
   methodPaypal: "PayPal",
   methodCash: "Contanti",
   payHintCard: "Pagamento sicuro con carta tramite Stripe.",
-  payHintPaypal: "Autorizzi il pagamento su PayPal e torni qui.",
+  payHintPaypal:
+    "Autorizzi il pagamento su PayPal e torni qui. Non chiudere la finestra di PayPal finché il pagamento non è confermato.",
   payNow: "Paga",
   openingPayment: "Apertura del pagamento…",
   simulatePayment: "Simula il pagamento (test)",
@@ -3296,6 +3304,7 @@ const it: Strings = {
   payFailedNote: "Pagamento non riuscito — riprova.",
   orderFailed: "Ordine non riuscito — riprova.",
   orderingPaused: "Gli ordini sono sospesi al momento — riprova più tardi.",
+  cashNotAvailable: "Il contante non è accettato qui — paga con carta o PayPal.",
   /* Chiusi adesso: niente ordini immediati, ma il preordine resta. */
   orderClosedNow: "Al momento siamo chiusi: puoi preordinare per più tardi oggi.",
   orderClosedNoSlots: "Al momento siamo chiusi e per oggi non ci sono più orari disponibili.",
@@ -3438,7 +3447,7 @@ const it: Strings = {
   ordersRewardOff: "−{value} premio",
   ordersRewardOffPoints: "−{value} premio · {points} punti",
   rewardPointsSpent: "{points} punti",
-  rewardsUsedOn: "Usato per l'ordine #{number}",
+  rewardsUsedOn: "Usato per l'ordine {number}",
   rewardsRedeemed: "Premio da {value} usato",
 
   /* Carte regalo */
@@ -3505,7 +3514,7 @@ const it: Strings = {
   giftCardTimelineBought: "Acquistata",
   giftCardTimelineShared: "Link aperto",
   giftCardTimelineRedeemedCounter: "Riscattata al ristorante",
-  giftCardTimelineRedeemedOrder: "Riscattata per l'ordine #{number}",
+  giftCardTimelineRedeemedOrder: "Riscattata per l'ordine {number}",
 
   ownerGiftCards: "Carte regalo",
   ownerSales: "Vendite del giorno",
@@ -4254,7 +4263,8 @@ const es: Strings = {
   methodPaypal: "PayPal",
   methodCash: "Efectivo",
   payHintCard: "Pago seguro con tarjeta a través de Stripe.",
-  payHintPaypal: "Aprobarás el pago en PayPal y volverás aquí.",
+  payHintPaypal:
+    "Aprobarás el pago en PayPal y volverás aquí. No cierres la ventana de PayPal hasta que se confirme el pago.",
   payNow: "Pagar",
   openingPayment: "Abriendo el pago…",
   simulatePayment: "Simular pago (prueba)",
@@ -4290,6 +4300,7 @@ const es: Strings = {
   payFailedNote: "No se ha podido completar el pago — inténtalo de nuevo.",
   orderFailed: "No se ha podido realizar el pedido — inténtalo de nuevo.",
   orderingPaused: "Los pedidos están pausados ahora mismo — inténtalo más tarde.",
+  cashNotAvailable: "No se acepta efectivo aquí — paga con tarjeta o PayPal.",
   /* Cerrado ahora: nada inmediato, pero sí por adelantado. */
   orderClosedNow: "Ahora mismo estamos cerrados: puedes pedir por adelantado para hoy más tarde.",
   orderClosedNoSlots: "Ahora mismo estamos cerrados y hoy ya no quedan horas disponibles.",
@@ -4432,7 +4443,7 @@ const es: Strings = {
   ordersRewardOff: "−{value} de recompensa",
   ordersRewardOffPoints: "−{value} de recompensa · {points} puntos",
   rewardPointsSpent: "{points} puntos",
-  rewardsUsedOn: "Usada en el pedido #{number}",
+  rewardsUsedOn: "Usada en el pedido {number}",
   rewardsRedeemed: "Recompensa de {value} usada",
 
   /* Tarjetas regalo */
@@ -4499,7 +4510,7 @@ const es: Strings = {
   giftCardTimelineBought: "Comprada",
   giftCardTimelineShared: "Enlace abierto",
   giftCardTimelineRedeemedCounter: "Canjeada en el restaurante",
-  giftCardTimelineRedeemedOrder: "Canjeada en el pedido #{number}",
+  giftCardTimelineRedeemedOrder: "Canjeada en el pedido {number}",
 
   ownerGiftCards: "Tarjetas regalo",
   ownerSales: "Ventas del día",
@@ -5243,7 +5254,8 @@ const ar: Strings = {
   methodPaypal: "باي بال",
   methodCash: "نقداً",
   payHintCard: "دفع آمن بالبطاقة عبر Stripe.",
-  payHintPaypal: "ستؤكّد الدفع في باي بال ثم تعود إلى هنا.",
+  payHintPaypal:
+    "ستؤكّد الدفع في باي بال ثم تعود إلى هنا. يُرجى عدم إغلاق نافذة باي بال حتى يتم تأكيد الدفع.",
   payNow: "ادفع",
   openingPayment: "جارٍ فتح صفحة الدفع…",
   simulatePayment: "محاكاة الدفع (اختبار)",
@@ -5276,6 +5288,7 @@ const ar: Strings = {
   payFailedNote: "تعذّر إتمام الدفع — يُرجى المحاولة مرة أخرى.",
   orderFailed: "تعذّر إرسال الطلب — يُرجى المحاولة مرة أخرى.",
   orderingPaused: "الطلبات متوقفة مؤقتاً — يُرجى المحاولة لاحقاً.",
+  cashNotAvailable: "الدفع نقداً غير متاح لهذا الطلب — يُرجى الدفع بالبطاقة أو PayPal.",
   /* مغلق الآن: لا طلب فوري، لكن الطلب المسبق متاح. */
   orderClosedNow: "نحن مغلقون الآن — يمكنك الطلب المسبق لوقت لاحق اليوم.",
   orderClosedNoSlots: "نحن مغلقون الآن ولم تعد هناك أوقات متاحة اليوم.",
@@ -5417,7 +5430,7 @@ const ar: Strings = {
   ordersRewardOff: "−{value} مكافأة",
   ordersRewardOffPoints: "−{value} مكافأة · {points} نقطة",
   rewardPointsSpent: "{points} نقطة",
-  rewardsUsedOn: "استُخدمت في الطلب #{number}",
+  rewardsUsedOn: "استُخدمت في الطلب {number}",
   rewardsRedeemed: "استُخدمت مكافأة بقيمة {value}",
 
   /* بطاقات الهدايا */
@@ -5484,7 +5497,7 @@ const ar: Strings = {
   giftCardTimelineBought: "تم الشراء",
   giftCardTimelineShared: "فُتح الرابط",
   giftCardTimelineRedeemedCounter: "استُخدمت في المطعم",
-  giftCardTimelineRedeemedOrder: "استُخدمت في الطلب #{number}",
+  giftCardTimelineRedeemedOrder: "استُخدمت في الطلب {number}",
 
   ownerGiftCards: "بطاقات الهدايا",
   ownerSales: "مبيعات اليوم",

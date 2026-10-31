@@ -118,7 +118,8 @@ describe("paypal payments (fake provider, full flow)", () => {
     );
     expect(pending.paymentStatus).toBe("pending");
     expect(pending.paymentProvider).toBe("paypal");
-    expect(pending.paymentRef).toBe(`pp_fake_${orderId}`);
+    // One PayPal order per attempt.
+    expect(pending.paymentRef?.startsWith(`pp_fake_${orderId}_`)).toBe(true);
 
     const first = await finalizePayPalReturn(fx.tenantId, orderId);
     expect(first.paid).toBe(true);
@@ -218,6 +219,27 @@ describe("paypal payments (fake provider, full flow)", () => {
       ok: false,
       error: "already_paid",
     });
+  });
+
+  it("an unpaid online order stays out of every list, even once cancelled", async () => {
+    const { listRecentOrders, advanceOrderStatus } = await import("./order-service");
+    const fx = await fixture();
+    const userId = createdUserIds[createdUserIds.length - 1]!;
+    const placed = await placeOrder(fx, {
+      orderType: "dine_in",
+      items: [{ itemId: fx.itemId, quantity: 1 }],
+      intendedPayment: "paypal",
+    });
+    if (!placed.ok) throw new Error("order failed");
+    const id = placed.value.orderId;
+    const listed = async () => (await listRecentOrders(userId, 100)).map((o) => o.id);
+    expect(await listed()).not.toContain(id);
+    expect((await advanceOrderStatus(userId, id, "cancelled")).ok).toBe(true);
+    // Cancelled but never paid: still not an order anybody should see listed.
+    expect(await listed()).not.toContain(id);
+    expect(
+      (await listRecentOrders(userId, 100, { scope: "closed" })).map((o) => o.id),
+    ).not.toContain(id);
   });
 
   it("online orders reach the kitchen only once paid; cash goes straight there", async () => {

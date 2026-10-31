@@ -4,10 +4,10 @@
     "name": "Maaji Restaurant",
     "slug": "maaji-restaurant",
     "themeId": "maaji-emerald",
-    "logoKey": "cmv94s39z00009dsbfyqs60wp/uploads/a61b7b68-f79a-484b-85d3-dbd6dc7f0b44",
+    "logoKey": "cmvwqxno90000icsb2kr6jh79/uploads/d96bbf62-99f0-41c9-92cd-e1ab332fb385",
     "bannerKey": null,
     "backdropId": "none",
-    "halal": false
+    "halal": true
   },
   "colors": {
     "red": "#0f4a47",

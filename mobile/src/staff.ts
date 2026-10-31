@@ -1,4 +1,5 @@
 import type { UploadPhoto } from "./api";
+import { orderLabelOf } from "./order-label";
 import { appendUploadPhoto, BASE_URL, rebaseUrl, warnUploadFailure } from "./api";
 import type { GiftCardView } from "./gift-cards";
 import { asGiftCard } from "./gift-cards";
@@ -391,6 +392,8 @@ export interface StaffIssueSummary {
   id: string;
   orderId: string;
   orderNumber: number;
+  /** The public code ("RP-K7M3Q"). */
+  orderLabel: string;
   orderType: string;
   status: string;
   customerName: string | null;
@@ -411,6 +414,8 @@ export interface StaffIssue {
   resolvedAt: string | null;
   messages: StaffIssueMessage[];
   orderNumber: number;
+  /** The public code ("RP-K7M3Q"). */
+  orderLabel: string;
   orderType: string;
   customerName: string | null;
   customerPhone: string | null;
@@ -457,6 +462,11 @@ function asIssueSummary(raw: unknown): StaffIssueSummary | null {
     id,
     orderId: str(i.orderId),
     orderNumber: num(i.orderNumber),
+    orderLabel: orderLabelOf({
+      orderNumber: num(i.orderNumber),
+      orderLabel: nullableStr(i.orderLabel),
+      orderSeries: nullableStr(i.orderSeries),
+    }),
     orderType: str(i.orderType, "takeaway"),
     status: str(i.status, "open"),
     customerName: nullableStr(i.customerName),
@@ -490,6 +500,11 @@ export function asStaffIssue(raw: unknown): StaffIssue | null {
       ? i.messages.map(asIssueMessage).filter((m): m is StaffIssueMessage => m !== null)
       : [],
     orderNumber: num(i.orderNumber),
+    orderLabel: orderLabelOf({
+      orderNumber: num(i.orderNumber),
+      orderLabel: nullableStr(i.orderLabel),
+      orderSeries: nullableStr(i.orderSeries),
+    }),
     orderType: str(i.orderType, "takeaway"),
     customerName: nullableStr(i.customerName),
     customerPhone: nullableStr(i.customerPhone),
@@ -1821,10 +1836,14 @@ export async function updateStaffLoyalty(
 export async function fetchStaffTicketHtml(
   token: string,
   orderId: string,
+  /** An AUTOMATIC print: the server answers 409 ("conflict") when any
+   *  device already printed the order — once in total (2026-10-23). */
+  auto = false,
 ): Promise<StaffResult<string>> {
   let res: Response;
   try {
-    res = await fetch(`${BASE_URL}/api/v1/staff/orders/${encodeURIComponent(orderId)}/ticket`, {
+    const q = auto ? "?auto=1" : "";
+    res = await fetch(`${BASE_URL}/api/v1/staff/orders/${encodeURIComponent(orderId)}/ticket${q}`, {
       headers: { "X-Staff-Token": token, Accept: "text/html" },
     });
   } catch {
@@ -1844,10 +1863,12 @@ export async function fetchStaffTicketEscPos(
   token: string,
   orderId: string,
   paper: 58 | 80,
+  /** An AUTOMATIC print — see fetchStaffTicketHtml. */
+  auto = false,
 ): Promise<StaffResult<string>> {
   const res = await staffFetch(
     token,
-    `/api/v1/staff/orders/${encodeURIComponent(orderId)}/ticket?format=escpos&paper=${paper}`,
+    `/api/v1/staff/orders/${encodeURIComponent(orderId)}/ticket?format=escpos&paper=${paper}${auto ? "&auto=1" : ""}`,
   );
   if (!res) return { ok: false, error: "network" };
   if (res.status !== 200 || !res.body) return { ok: false, error: failure(res.status) };
@@ -2087,6 +2108,8 @@ export interface DispatchedOrder {
    */
   already: boolean;
   orderNumber: number;
+  /** The public code ("RP-K7M3Q"). */
+  orderLabel: string;
   customerName: string | null;
   addressLine: string | null;
   /** Google Maps for `addressLine`; null when the order has no usable
@@ -2123,6 +2146,11 @@ export async function dispatchStaffOrder(token: string, orderId: string): Promis
     data: {
       already: res.body.already === true,
       orderNumber: num(res.body.orderNumber),
+      orderLabel: orderLabelOf({
+        orderNumber: num(res.body.orderNumber),
+        orderLabel: nullableStr(res.body.orderLabel),
+        orderSeries: nullableStr(res.body.orderSeries),
+      }),
       customerName: nullableStr(res.body.customerName),
       addressLine: nullableStr(res.body.addressLine),
       directionsUrl: nullableStr(res.body.directionsUrl),

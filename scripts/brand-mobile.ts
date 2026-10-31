@@ -83,8 +83,12 @@ const ADAPTIVE_INSET = 0.62; // Android crops to the inner ~66% circle.
  * Swapping in a master whose ink reaches further needs this re-measured —
  * `scripts/brand-mobile.test.ts` fails if the shipped foreground breaks the
  * safe circle, so it will say so.
+ *
+ * Maaji's master is full-bleed: its teal ground is ink right into the
+ * corners, √2/2 = 0.707 of the canvas from the centre, so the inset is
+ * (1/3) / 0.707 = 0.471 → 0.47.
  */
-const FINISHED_ICON_INSET = 0.57;
+const FINISHED_ICON_INSET = 0.47;
 const SPLASH_INSET = 0.7;
 /** Hero is a full-bleed background on a phone in portrait, so it goes wide. */
 const HERO_W = 1440;

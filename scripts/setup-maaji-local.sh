@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Rebuilds the LOCAL Maaji restaurant from nothing, in one go:
+#
+#   scripts/setup-maaji-local.sh
+#
+#   migrations → menu templates → restaurant + owner → operator login
+#   → Maaji theme, logo and Rangla's appearance options
+#   → Rangla's live menu, photos and translations (read-only from Rangla's DB)
+#   → hours, ordering, loyalty and gift-card settings → the Pakoras offer
+#
+# Safe to re-run: every seed is idempotent, settings are overwritten with
+# the same values, and the menu copy publishes a fresh version.
+#
+# Needs: the maaji-* containers up (.env points at them) and, for the menu,
+# Rangla's local checkout + database (RANGLA_DIR, default ../rangla-punjab-resturant).
+# Rangla is only ever READ. Production does not use this script — see
+# deploy/setup-db.sh.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+RANGLA_DIR="${RANGLA_DIR:-../rangla-punjab-resturant}"
+SLUG="maaji-restaurant"
+run() { pnpm exec tsx --env-file=.env "$@"; }
+psql_maaji() {
+  docker exec -i maaji-postgres psql -U maaji_user -d maaji-restaurant -v ON_ERROR_STOP=1 -Atq "$@"
+}
+
+echo "→ migrations"
+pnpm exec prisma migrate deploy >/dev/null
+pnpm exec prisma generate >/dev/null
+
+echo "→ seeds (templates, restaurant + owner, operator)"
+run scripts/seed-menu-templates.ts | tail -1
+run scripts/seed-restaurant.ts | tail -1
+run scripts/seed-platform-admin.ts | tail -1
+
+echo "→ logo"
+run scripts/set-venue-logo.ts "$SLUG" public/brand/maaji-logo.png | grep -E "stored|size" || true
+
+echo "→ theme, appearance, hours, ordering, loyalty, gift cards"
+psql_maaji <<SQL
+UPDATE venues SET
+  branding = branding || '{
+    "theme": "maaji-emerald", "texture": "jali", "backdrop": "none",
+    "primaryColor": "#0f4a47", "headingColor": "#e0b458",
+    "kiosk": "lg", "navLayout": "side", "cardBorders": "on",
+    "halalFilter": "on", "categoryIcons": "icons"
+  }'::jsonb,
+  timezone = 'Europe/Berlin',
+  hours = '{"configured": true, "days": {
+    "mon": {"closed": false, "slots": [{"open": "11:00", "close": "14:00"}, {"open": "17:00", "close": "22:00"}]},
+    "tue": {"closed": false, "slots": [{"open": "11:00", "close": "14:00"}, {"open": "17:00", "close": "22:00"}]},
+    "wed": {"closed": false, "slots": [{"open": "11:00", "close": "14:00"}, {"open": "17:00", "close": "22:00"}]},
+    "thu": {"closed": false, "slots": [{"open": "11:00", "close": "14:00"}, {"open": "17:00", "close": "22:00"}]},
+    "fri": {"closed": false, "slots": [{"open": "11:00", "close": "14:00"}, {"open": "17:00", "close": "22:00"}]},
+    "sat": {"closed": false, "slots": [{"open": "11:00", "close": "14:00"}, {"open": "17:00", "close": "22:00"}]},
+    "sun": {"closed": false, "slots": [{"open": "11:00", "close": "14:00"}, {"open": "17:00", "close": "22:00"}]}
+  }}'::jsonb,
+  ordering = '{"dineIn": true, "delivery": true, "takeaway": true, "pausedUntil": null,
+    "deliveryZips": [], "notifyEmails": [], "reservations": true,
+    "deliveryAreas": [{"zip": "78467", "feeCents": 0, "locality": "Konstanz", "minCents": 0, "freeOverCents": 0}],
+    "acceptedPayments": ["cash", "girocard", "visa", "mastercard"], "appCancelEnabled": false,
+    "deliveryFeeCents": 0, "deliveryMinCents": 0, "etaAcceptSeconds": 30, "etaPickupMinutes": 20,
+    "issueWindowHours": 3, "cashCancelMinutes": 10, "etaDeliveryMinutes": 50, "orderDiscountPercent": 0}'::jsonb,
+  loyalty = '{"enabled": true, "rewardPoints": 100, "minOrderCents": 2000, "pointsPerOrder": 5,
+    "rewardValueCents": 2000, "voucherExpiryMonths": 0}'::jsonb,
+  gift_cards = '{"enabled": true, "expiryMonths": 36}'::jsonb,
+  "updatedAt" = now()
+WHERE slug = '$SLUG';
+SQL
+
+echo "→ menu, photos and translations from Rangla (read-only)"
+SOURCE_DATABASE_URL="$(grep -E '^DATABASE_URL=' "$RANGLA_DIR/.env" | cut -d= -f2- | tr -d '"')" \
+SOURCE_UPLOADS="$RANGLA_DIR/public/uploads" SOURCE_SLUG=rangla-punjab TARGET_SLUG="$SLUG" \
+  run scripts/copy-menu-from-venue.ts
+
+echo "→ offer: Pakoras 6,90 → 4,90 € (open-ended)"
+psql_maaji <<SQL
+UPDATE items i SET offer_price_cents = 490, offer_starts_at = NULL, offer_ends_at = NULL,
+       offer_weekly = NULL, "updatedAt" = now()
+  FROM categories c, menus m, venues v
+ WHERE c.id = i.category_id AND m.published_version = c.menu_version_id
+   AND v.id = m.venue_id AND v.slug = '$SLUG' AND i.name = '1. Pakoras';
+SQL
+
+echo "✓ Maaji is set up locally: $(psql_maaji -c "SELECT count(*) FROM items i JOIN categories c ON c.id = i.category_id JOIN menus m ON m.published_version = c.menu_version_id") dishes live"

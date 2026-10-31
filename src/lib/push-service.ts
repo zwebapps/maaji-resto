@@ -1,4 +1,5 @@
 import { orderLabel } from "./order-label";
+import { displayOrderLabel } from "./order-code";
 import { env } from "./env";
 import { createLogger } from "./logger";
 import { captureException } from "./observability";
@@ -402,13 +403,19 @@ export async function sendNewOrderPush(tenantId: string, orderId: string): Promi
     const order = await asTenant(tenantId, (tx) =>
       tx.order.findFirst({
         where: { id: orderId },
-        select: { orderNumber: true, orderType: true, totalCents: true, currency: true },
+        select: {
+          orderNumber: true,
+          orderSeries: true,
+          orderType: true,
+          totalCents: true,
+          currency: true,
+        },
       }),
     );
     if (!order) return;
     const label = ORDER_TYPE_LABEL[order.orderType] ?? order.orderType;
     await sendStaffPush(tenantId, {
-      title: `New order #${orderLabel(order)}`,
+      title: `New order ${orderLabel(order)}`,
       body: `${label} · ${formatTotal(order.totalCents, order.currency)}`,
       data: { kind: "order", orderId },
     });
@@ -427,14 +434,62 @@ export async function sendGuestCancelPush(tenantId: string, orderId: string): Pr
     const order = await asTenant(tenantId, (tx) =>
       tx.order.findFirst({
         where: { id: orderId },
-        select: { orderNumber: true, orderType: true, totalCents: true, currency: true },
+        select: {
+          orderNumber: true,
+          orderSeries: true,
+          orderType: true,
+          totalCents: true,
+          currency: true,
+        },
       }),
     );
     if (!order) return;
     const label = ORDER_TYPE_LABEL[order.orderType] ?? order.orderType;
     await sendStaffPush(tenantId, {
-      title: `Order #${orderLabel(order)} cancelled by the guest`,
+      title: `Order ${orderLabel(order)} cancelled by the guest`,
       body: `${label} · ${formatTotal(order.totalCents, order.currency)} · cash`,
+      data: { kind: "order", orderId },
+    });
+  } catch (err) {
+    captureException(err, { tenantId, orderId, where: "push-service" });
+  }
+}
+
+/**
+ * "Check payment on #O-6 — …". A payment that needs a human: money arrived
+ * hours after the order, or on an order that was already paid or called
+ * off (owner, 2026-10-21, after O-6 surfaced a day late). The text says
+ * what to check; refunds stay the owner's decision.
+ */
+export async function sendPaymentAlertPush(
+  tenantId: string,
+  orderId: string,
+  problem: string,
+): Promise<void> {
+  try {
+    const found = await asTenant(tenantId, async (tx) => {
+      const order = await tx.order.findFirst({
+        where: { id: orderId },
+        select: { orderNumber: true, orderSeries: true, totalCents: true, currency: true },
+      });
+      if (order) {
+        return {
+          label: orderLabel(order),
+          total: ` · ${formatTotal(order.totalCents, order.currency)}`,
+        };
+      }
+      // Deleted: the order log still knows its number.
+      const logged = await tx.orderEvent.findFirst({
+        where: { orderId },
+        orderBy: { createdAt: "desc" },
+        select: { orderLabel: true },
+      });
+      return logged ? { label: displayOrderLabel(logged.orderLabel) ?? "?", total: "" } : null;
+    });
+    if (!found) return;
+    await sendStaffPush(tenantId, {
+      title: `Check payment on ${found.label}`,
+      body: `${problem}${found.total}`,
       data: { kind: "order", orderId },
     });
   } catch (err) {
@@ -452,12 +507,12 @@ export async function sendNewIssuePush(tenantId: string, issueId: string): Promi
     const issue = await asTenant(tenantId, (tx) =>
       tx.orderIssue.findFirst({
         where: { id: issueId },
-        select: { order: { select: { orderNumber: true } } },
+        select: { order: { select: { orderNumber: true, orderSeries: true } } },
       }),
     );
     if (!issue) return;
     await sendStaffPush(tenantId, {
-      title: `Problem reported on #${orderLabel(issue.order)}`,
+      title: `Problem reported on ${orderLabel(issue.order)}`,
       body: "A guest is waiting for an answer.",
       data: { kind: "issue", issueId },
     });

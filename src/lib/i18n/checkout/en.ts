@@ -22,8 +22,8 @@
 const en = {
   /* Floating bar + sheet chrome */
   yourOrder: "Your order",
-  placedBadge: (n: string) => `Order #${n} ✓`,
-  headingPlaced: (n: string) => `Order #${n}`,
+  placedBadge: (n: string) => `Order ${n} ✓`,
+  headingPlaced: (n: string) => `Order ${n}`,
   close: "Close order panel",
 
   /* Line items */
@@ -116,7 +116,7 @@ const en = {
 
   /* Confirmation */
   placedIntro: "Your order is in — the staff sees it as",
-  placedRef: (n: string) => `order #${n}`,
+  placedRef: (n: string) => `order ${n}`,
   placedForTable: (table: string) => ` for table ${table}`,
   placedCashTail: ", payable at the restaurant. Your receipt is downloading.",
   placedEmailTail: (email: string, pending: boolean) =>
@@ -124,6 +124,11 @@ const en = {
   payOnline: (amount: string) => `Pay online · ${amount}`,
   openingPayment: "Opening payment…",
   openingPaypal: "Opening PayPal…",
+  /** Under the pay button and while the payment page opens: closing the
+   *  tab mid-payment can leave the order unpaid (owner, 2026-10-19). */
+  payRedirectNote:
+    "You'll be taken to a secure payment page. Please don't close this window until you see your order confirmation.",
+  payKeepWindowOpen: "Opening the secure payment page. Please don't close this window.",
   payWithPaypal: "Pay with PayPal",
   trackOrder: "Track your order",
   downloadReceipt: "Download receipt (PDF)",
