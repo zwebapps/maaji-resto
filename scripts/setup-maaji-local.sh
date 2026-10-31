@@ -5,7 +5,7 @@
 #
 #   migrations → menu templates → restaurant + owner → operator login
 #   → Maaji theme, logo and Rangla's appearance options
-#   → Rangla's live menu, photos and translations (read-only from Rangla's DB)
+#   → Rangla's LIVE menu, photos and translations (public site, read-only)
 #   → hours, ordering, loyalty and gift-card settings → the Pakoras offer
 #
 # Safe to re-run: every seed is idempotent, settings are overwritten with
@@ -71,10 +71,12 @@ UPDATE venues SET
 WHERE slug = '$SLUG';
 SQL
 
-echo "→ menu, photos and translations from Rangla (read-only)"
-SOURCE_DATABASE_URL="$(grep -E '^DATABASE_URL=' "$RANGLA_DIR/.env" | cut -d= -f2- | tr -d '"')" \
-SOURCE_UPLOADS="$RANGLA_DIR/public/uploads" SOURCE_SLUG=rangla-punjab TARGET_SLUG="$SLUG" \
-  run scripts/copy-menu-from-venue.ts
+echo "→ menu, photos and translations from Rangla's LIVE site (public, read-only)"
+# The live public menu lists only today's dishes, so the weekday Thali is
+# carried over from the menu already here (first run: copy it from Rangla's
+# local database with scripts/copy-menu-from-venue.ts beforehand).
+SOURCE_URL="${SOURCE_URL:-https://rangla-punjab-restaurant.de}" TARGET_SLUG="$SLUG" KEEP_CATEGORIES="Thali" \
+  run scripts/import-menu-from-live-site.ts
 
 echo "→ offer: Pakoras 6,90 → 4,90 € (open-ended)"
 psql_maaji <<SQL
