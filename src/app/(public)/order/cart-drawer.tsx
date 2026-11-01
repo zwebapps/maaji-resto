@@ -137,6 +137,8 @@ export interface DrawerModes {
   /** Cash for pickup / delivery (owner switch); absent = accepted. */
   cashTakeaway?: boolean;
   cashDelivery?: boolean;
+  /** Cash pickup / delivery needs an email code (owner switch). */
+  verifyCash?: boolean;
 }
 
 /** What the drawer needs to talk about points. Mirrors the `loyalty`
@@ -530,6 +532,19 @@ export function CartDrawer({
         : true;
   const payMethod: PayMethod =
     pickedPay === "cash" && !cashOk ? (onlinePayment ? "card" : "paypal") : pickedPay;
+  // Cash pickup / delivery (owner, 2026-11-01): the guest confirms the
+  // email with a mailed 6-digit code before the order can go; the server
+  // checks the resulting token again. The proof belongs to ONE address —
+  // editing the field drops it.
+  const needsCode = modes.verifyCash === true && payMethod === "cash" && orderType !== "dine_in";
+  const [code, setCode] = useState("");
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [emailProof, setEmailProof] = useState<{ email: string; token: string } | null>(null);
+  const typedEmail = customerEmail.trim().toLowerCase();
+  const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(typedEmail);
+  const emailVerified = emailProof !== null && emailProof.email === typedEmail;
   const [street, setStreet] = useState("");
   const [zip, setZip] = useState("");
   const [note, setNote] = useState("");
@@ -735,7 +750,8 @@ export function CartDrawer({
       : !customerName.trim() ||
         !customerPhone.trim() ||
         (orderType === "delivery" &&
-          (!street.trim() || !zip.trim() || (hasAreas && !selectedArea)));
+          (!street.trim() || !zip.trim() || (hasAreas && !selectedArea))) ||
+        (needsCode && !emailVerified);
   const money = (cents: number): string => formatCents(cents, currency, locale);
   // Points are earned on the FOOD subtotal — 5 per full €20 at the
   // defaults (`pointsForFood`) — and the delivery fee never counts, which
@@ -857,6 +873,8 @@ export function CartDrawer({
         customerPhone: orderType === "dine_in" ? undefined : customerPhone.trim(),
         customerEmail: customerEmail.trim() || undefined,
         intendedPayment: method,
+        // Proof of the email code, for a cash pickup / delivery order.
+        emailToken: method === "cash" && needsCode ? emailProof?.token : undefined,
         // The guest's language, so the order e-mail arrives in it.
         locale,
         address:
@@ -910,7 +928,9 @@ export function CartDrawer({
                         ? t.errVenueClosed
                         : body?.error === "ordering_paused"
                           ? t.errVenuePaused
-                          : t.errGeneric,
+                          : body?.error === "email_unverified"
+                            ? t.verifyFirst
+                            : t.errGeneric,
         );
         return null;
       }
@@ -933,6 +953,68 @@ export function CartDrawer({
       return null;
     } finally {
       setPlacing(false);
+    }
+  }
+
+  /** Mail a 6-digit code to the typed address (cash orders). */
+  async function sendEmailCode(): Promise<void> {
+    if (!emailLooksValid || codeBusy) return;
+    setCodeBusy(true);
+    setCodeError(null);
+    try {
+      const res = await fetch("/api/orders/email-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, email: typedEmail, locale }),
+      });
+      if (!res.ok) {
+        setCodeError(res.status === 429 ? t.errRateLimited : t.codeSendFailed);
+        return;
+      }
+      setCode("");
+      setCodeSentTo(typedEmail);
+    } catch {
+      setCodeError(t.errNoConnection);
+    } finally {
+      setCodeBusy(false);
+    }
+  }
+
+  /** Check the typed code; right → the proof the order carries. */
+  async function confirmEmailCode(): Promise<void> {
+    const digits = code.replace(/\D/g, "");
+    if (digits.length !== 6 || codeBusy) return;
+    setCodeBusy(true);
+    setCodeError(null);
+    try {
+      const res = await fetch("/api/orders/email-code/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, email: typedEmail, code: digits }),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        emailToken?: string;
+        error?: string;
+      } | null;
+      if (res.ok && body?.emailToken) {
+        setEmailProof({ email: typedEmail, token: body.emailToken });
+        setCodeSentTo(null);
+        setCode("");
+        return;
+      }
+      setCodeError(
+        body?.error === "expired"
+          ? t.codeExpired
+          : body?.error === "too_many"
+            ? t.codeTooMany
+            : res.status === 429
+              ? t.errRateLimited
+              : t.codeInvalid,
+      );
+    } catch {
+      setCodeError(t.errNoConnection);
+    } finally {
+      setCodeBusy(false);
     }
   }
 
@@ -1446,18 +1528,90 @@ export function CartDrawer({
                     </div>
                   )}
                   <label className="mt-3 block text-sm">
-                    <span className={FIELD_LABEL}>{t.email}</span>
+                    <span className={FIELD_LABEL}>
+                      {needsCode ? `${t.emailRequired} *` : t.email}
+                    </span>
                     <input
                       type="email"
                       inputMode="email"
                       autoComplete="email"
                       value={customerEmail}
                       maxLength={120}
-                      onChange={(e) => setCustomerEmail(e.target.value)}
+                      required={needsCode}
+                      onChange={(e) => {
+                        setCustomerEmail(e.target.value);
+                        setCodeError(null);
+                      }}
                       placeholder={t.emailPlaceholder}
                       className={FIELD}
                     />
                   </label>
+                  {needsCode ? (
+                    <div className="mt-2 text-sm" aria-live="polite">
+                      {emailVerified ? (
+                        <p className="font-semibold text-[#2f6b3a]">✓ {t.emailVerified}</p>
+                      ) : codeSentTo === typedEmail ? (
+                        <div>
+                          <p className={FIELD_LABEL}>{t.codeSent}</p>
+                          <div className="mt-2 flex gap-2">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                              pattern="[0-9]*"
+                              maxLength={6}
+                              value={code}
+                              aria-label={t.codeLabel}
+                              placeholder="123456"
+                              onChange={(e) =>
+                                setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  void confirmEmailCode();
+                                }
+                              }}
+                              className={FIELD + " mt-0 w-32 text-center tracking-[0.3em]"}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void confirmEmailCode()}
+                              disabled={codeBusy || code.length !== 6}
+                              className={CTA_SECONDARY + " mt-0 w-auto px-4 disabled:opacity-50"}
+                            >
+                              {t.confirmCode}
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void sendEmailCode()}
+                            disabled={codeBusy}
+                            className="mt-2 text-xs underline underline-offset-2"
+                          >
+                            {t.resendCode}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void sendEmailCode()}
+                          disabled={codeBusy || !emailLooksValid}
+                          className={CTA_SECONDARY + " mt-0 w-auto px-4 disabled:opacity-50"}
+                        >
+                          {t.sendCode}
+                        </button>
+                      )}
+                      {codeError ? (
+                        <p role="alert" className="mt-2 text-xs font-medium text-[#b3261e]">
+                          {codeError}
+                        </p>
+                      ) : null}
+                      {!emailVerified ? null : (
+                        <p className={FIELD_LABEL + " mt-1 text-xs"}>{t.callNote}</p>
+                      )}
+                    </div>
+                  ) : null}
 
                   {orderType === "delivery" ? (
                     <div className="mt-3 space-y-3">

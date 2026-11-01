@@ -84,6 +84,10 @@ export interface StaffOrder {
    * choose the minutes and accept — after that the promise is fixed.
    */
   eta: StaffOrderEta | null;
+  /** A cash order waiting for its confirmation call (owner, 2026-11-01):
+   *  Accept (with − / + minutes when `timed`) or Reject. Null otherwise,
+   *  and from a server that predates it. */
+  confirmation: { timed: boolean; defaultMinutes: number } | null;
   createdAt: string;
   updatedAt: string;
   paymentStatus: string;
@@ -218,6 +222,16 @@ export function asStaffOrder(raw: unknown): StaffOrder | null {
     discountPoints: num(o.discountPoints),
     outForDeliveryAt: nullableStr(o.outForDeliveryAt),
     eta: asEta(o.eta),
+    confirmation:
+      o.confirmation && typeof o.confirmation === "object"
+        ? {
+            timed: (o.confirmation as Record<string, unknown>).timed === true,
+            defaultMinutes:
+              typeof (o.confirmation as Record<string, unknown>).defaultMinutes === "number"
+                ? ((o.confirmation as Record<string, unknown>).defaultMinutes as number)
+                : 30,
+          }
+        : null,
     giftCardDiscountCents: num(o.giftCardDiscountCents),
     giftCardLast4: nullableStr(o.giftCardLast4),
     currency: str(o.currency, "EUR"),
@@ -348,6 +362,22 @@ export async function acceptStaffOrder(
     token,
     `/api/v1/staff/orders/${encodeURIComponent(orderId)}/accept`,
     { method: "POST", body: { minutes } },
+  );
+  if (!res) return { ok: false, error: "network" };
+  if (res.status !== 200 || !res.body) return { ok: false, error: failure(res.status) };
+  return { ok: true, data: asStaffOrder(res.body.order) };
+}
+
+/** Reject a cash order the confirmation call could not confirm; the
+ *  server cancels it and emails the guest (owner, 2026-11-01). */
+export async function rejectStaffOrder(
+  token: string,
+  orderId: string,
+): Promise<StaffAdvanceResult> {
+  const res = await staffFetch(
+    token,
+    `/api/v1/staff/orders/${encodeURIComponent(orderId)}/reject`,
+    { method: "POST", body: {} },
   );
   if (!res) return { ok: false, error: "network" };
   if (res.status !== 200 || !res.body) return { ok: false, error: failure(res.status) };

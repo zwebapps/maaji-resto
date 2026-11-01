@@ -6,7 +6,13 @@ import { fulfilmentLines } from "@/lib/ordering-config";
 import { listRecentOrders } from "@/lib/order-service";
 import { formatPrice } from "@/lib/public-menu";
 import { advanceOrderAction } from "../dashboard/(console)/orders/actions";
-import { advanceIcon, advanceLabel, isOpenStatus, nextStatus } from "@/lib/order-status";
+import {
+  advanceIcon,
+  advanceLabel,
+  awaitingConfirmation,
+  isOpenStatus,
+  nextStatus,
+} from "@/lib/order-status";
 import { AutoRefresh } from "../dashboard/(console)/orders/auto-refresh";
 import { FullscreenButton } from "./fullscreen-button";
 import { NewOrderChime } from "./new-order-chime";
@@ -152,9 +158,18 @@ export default async function KitchenPage(): Promise<React.ReactElement> {
                   key={order.id}
                   data-order-id={order.id}
                   className={`flex flex-col rounded-lg p-5 ${
-                    scheduled ? SCHEDULED_CARD : `border-2 ${urgency} bg-white/[0.06]`
+                    awaitingConfirmation(order)
+                      ? "border-2 border-red-500 bg-red-500/10"
+                      : scheduled
+                        ? SCHEDULED_CARD
+                        : `border-2 ${urgency} bg-white/[0.06]`
                   }`}
                 >
+                  {awaitingConfirmation(order) ? (
+                    <p className="-mx-5 -mt-5 mb-4 rounded-t-lg bg-red-600 px-5 py-2 text-sm font-semibold uppercase tracking-[0.12em] text-white">
+                      Not confirmed yet — don&apos;t cook
+                    </p>
+                  ) : null}
                   <div className="flex items-baseline justify-between gap-3">
                     <p className="font-serif text-3xl tabular-nums">
                       #{orderLabel(order)}
@@ -254,6 +269,15 @@ export default async function KitchenPage(): Promise<React.ReactElement> {
                       pill, no second button competing for the same thumb. */}
                   <div className="mt-auto flex items-stretch gap-2 pt-5">
                     {(() => {
+                      // Waiting for its confirmation call: accepting happens
+                      // on the orders screen, after the call — not here.
+                      if (awaitingConfirmation(order)) {
+                        return (
+                          <p className="flex-1 text-sm text-white/70">
+                            Accept or reject it on the orders screen after calling the guest.
+                          </p>
+                        );
+                      }
                       const to = nextStatus(order.status, order.orderType) ?? "done";
                       return (
                         <form action={advanceOrderAction} className="flex-1">

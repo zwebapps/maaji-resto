@@ -70,6 +70,9 @@ export interface ApiOrdering {
    *  accepted. */
   cashTakeaway?: boolean;
   cashDelivery?: boolean;
+  /** Cash pickup / delivery needs an email code first (owner switch,
+   *  2026-11-01). Absent on older servers = no code step. */
+  verifyCash?: boolean;
   onlinePayment: boolean;
   paypal?: boolean;
   /** Later-today "HH:MM" pickup/delivery slots inside opening hours,
@@ -451,6 +454,9 @@ export interface PlaceOrderInput {
    *  created first and paid immediately afterwards (sheet or web page),
    *  because a card that fails must not lose the basket. */
   intendedPayment?: "cash" | "card" | "paypal";
+  /** Proof of the email code (`verifyOrderEmailCode`) on a cash pickup /
+   *  delivery order while the venue asks for one. */
+  emailToken?: string;
   /** The guest's app language — picks the order e-mail's language. */
   locale?: string;
   /**
@@ -543,6 +549,54 @@ async function requestIdFor(signature: string): Promise<string> {
     /* best effort */
   }
   return key;
+}
+
+/** Mail a 6-digit code to the address a cash guest typed (owner,
+ *  2026-11-01). `rate_limited` / `send_failed` / `network` on failure. */
+export async function sendOrderEmailCode(
+  slug: string,
+  email: string,
+  locale: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/orders/email-code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug, email, locale }),
+    });
+    if (res.ok) return { ok: true };
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    return {
+      ok: false,
+      error: res.status === 429 ? "rate_limited" : (body?.error ?? "send_failed"),
+    };
+  } catch {
+    return { ok: false, error: "network" };
+  }
+}
+
+/** Check the typed code; right → the token the order carries. Errors:
+ *  `invalid`, `expired`, `too_many`, `rate_limited`, `network`. */
+export async function verifyOrderEmailCode(
+  slug: string,
+  email: string,
+  code: string,
+): Promise<{ ok: true; token: string } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/orders/email-code/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug, email, code }),
+    });
+    const body = (await res.json().catch(() => null)) as {
+      emailToken?: string;
+      error?: string;
+    } | null;
+    if (res.ok && typeof body?.emailToken === "string") return { ok: true, token: body.emailToken };
+    return { ok: false, error: res.status === 429 ? "rate_limited" : (body?.error ?? "invalid") };
+  } catch {
+    return { ok: false, error: "network" };
+  }
 }
 
 export async function placeOrder(

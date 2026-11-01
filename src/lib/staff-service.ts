@@ -1,8 +1,13 @@
-import { orderEta, type EtaDefaults } from "./order-eta";
+import { defaultEtaMinutes, etaApplies, orderEta, type EtaDefaults } from "./order-eta";
 import { orderLabel } from "./order-label";
 import { issueRefByOrder, type IssueRef, type IssueStatus } from "./issue-service";
 import { getKitchenOrder, listRecentOrders, type KitchenOrder } from "./order-service";
-import { ORDER_STATUSES, TERMINAL_STATUSES, canTransition } from "./order-status";
+import {
+  ORDER_STATUSES,
+  TERMINAL_STATUSES,
+  awaitingConfirmation,
+  canTransition,
+} from "./order-status";
 import { parseOrderingConfig, type OrderingConfig } from "./ordering-config";
 import { can, getAccess } from "./team-access";
 import { asUser, resolveActiveTenantId } from "./tenant";
@@ -83,6 +88,13 @@ export interface StaffOrder {
     accepted: boolean;
     adjustableUntil: string | null;
   } | null;
+  /**
+   * A cash order waiting for its confirmation call (owner, 2026-11-01):
+   * the app highlights the card, offers the guest's number, and shows
+   * Accept (− / + time when `timed`, starting at `defaultMinutes`; POST
+   * …/accept) and Reject (POST …/reject). Null for every other order.
+   */
+  confirmation: { timed: boolean; defaultMinutes: number } | null;
   currency: string;
   items: StaffOrderItem[];
   /** The complaint thread on this order, if there is one (P7-10). The
@@ -159,6 +171,12 @@ export function toStaffOrder(
 ): StaffOrder {
   const eta = orderEta(order, etaDefaults);
   return {
+    confirmation: awaitingConfirmation(order)
+      ? {
+          timed: etaApplies(order),
+          defaultMinutes: defaultEtaMinutes(order.orderType, etaDefaults),
+        }
+      : null,
     eta: eta
       ? {
           minutes: eta.minutes,

@@ -181,6 +181,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           // a cash order there with 409 `cash_not_available`.
           cashTakeaway: access.modes.cashTakeaway !== false,
           cashDelivery: access.modes.cashDelivery !== false,
+          // Cash pickup / delivery needs an email code (POST /api/orders/
+          // email-code, then /verify) and the order waits for a staff call.
+          // `/api/orders` refuses it without the code: 400 email_unverified.
+          verifyCash: access.modes.verifyCash === true,
           // Percent off every order's food (owner setting); 0 = none. The
           // app's cart previews it exactly as /api/orders applies it.
           orderDiscountPercent: access.modes.orderDiscountPercent ?? 0,

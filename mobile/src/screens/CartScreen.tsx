@@ -16,7 +16,15 @@ import {
 import * as ExpoLinking from "expo-linking";
 import { Ionicons } from "@expo/vector-icons";
 import type { ApiMenu, OrderType, PlacedOrder } from "../api";
-import { payPageUrl, placeOrder, setVoucherArmed, startHostedPayment, verifyPayment } from "../api";
+import {
+  payPageUrl,
+  placeOrder,
+  sendOrderEmailCode,
+  setVoucherArmed,
+  startHostedPayment,
+  verifyOrderEmailCode,
+  verifyPayment,
+} from "../api";
 import type { PlatformPayButtonProps } from "../stripe-module";
 import {
   confirmFakePayment,
@@ -205,6 +213,58 @@ export function CartScreen({
   const payMethod: PayMethod = payOptions.some((o) => o.key === pickedPay)
     ? pickedPay
     : (payOptions[0]?.key ?? pickedPay);
+  // Cash pickup / delivery (owner, 2026-11-01): the email is confirmed
+  // with a mailed 6-digit code before the order can go; the server checks
+  // the resulting token again. The proof is for ONE address — editing the
+  // field drops it.
+  const needsCode =
+    menu.ordering.verifyCash === true && payMethod === "cash" && orderType !== "dine_in";
+  const [code, setCode] = useState("");
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [emailProof, setEmailProof] = useState<{ email: string; token: string } | null>(null);
+  const typedEmail = email.trim().toLowerCase();
+  const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(typedEmail);
+  const emailVerified = emailProof !== null && emailProof.email === typedEmail;
+
+  async function sendCode(): Promise<void> {
+    if (!emailLooksValid || codeBusy) return;
+    setCodeBusy(true);
+    setCodeError(null);
+    const r = await sendOrderEmailCode(menu.venue.slug, typedEmail, lang);
+    setCodeBusy(false);
+    if (r.ok) {
+      setCode("");
+      setCodeSentTo(typedEmail);
+    } else {
+      setCodeError(r.error === "network" ? t.orderFailed : t.codeSendFailed);
+    }
+  }
+
+  async function confirmCode(): Promise<void> {
+    if (code.length !== 6 || codeBusy) return;
+    setCodeBusy(true);
+    setCodeError(null);
+    const r = await verifyOrderEmailCode(menu.venue.slug, typedEmail, code);
+    setCodeBusy(false);
+    if (r.ok) {
+      setEmailProof({ email: typedEmail, token: r.token });
+      setCodeSentTo(null);
+      setCode("");
+      return;
+    }
+    setCodeError(
+      r.error === "expired"
+        ? t.codeExpired
+        : r.error === "too_many"
+          ? t.codeTooMany
+          : r.error === "network"
+            ? t.orderFailed
+            : t.codeInvalid,
+    );
+  }
+
   const payHint =
     payMethod === "card"
       ? t.payHintCard
@@ -525,6 +585,7 @@ export function CartScreen({
     // No tick, no order: see the forfeit rule above.
     (forfeitNeeded && !forfeitOk) ||
     (needsContact && (!name.trim() || !phone.trim())) ||
+    (needsCode && !emailVerified) ||
     (orderType === "delivery" &&
       (!street.trim() || zip.trim().length < 3 || (areas.length > 0 && !area) || belowMinimum));
 
@@ -569,6 +630,7 @@ export function CartScreen({
         customerName: needsContact ? name.trim() : undefined,
         customerPhone: needsContact ? phone.trim() : undefined,
         customerEmail: email.trim() || undefined,
+        emailToken: method === "cash" && needsCode ? emailProof?.token : undefined,
         intendedPayment: method,
         // The app's language, so the order e-mail arrives in it.
         locale: lang,
@@ -600,6 +662,7 @@ export function CartScreen({
         outside_delivery_area: t.outsideArea,
         below_delivery_minimum: t.belowMin,
         unknown_items: t.menuChanged,
+        email_unverified: t.verifyFirst,
       };
       setError(messages[result.error] ?? t.orderFailed);
       // Stale ids from a republished menu: re-anchor the cart so the
@@ -996,13 +1059,90 @@ export function CartScreen({
                     </>
                   )}
                   <Field
-                    label={t.receiptEmail}
+                    label={needsCode ? t.emailCodeLabel : t.receiptEmail}
                     value={email}
-                    onChange={setEmail}
+                    onChange={(v) => {
+                      setEmail(v);
+                      setCodeError(null);
+                    }}
                     placeholder="name@example.com"
                     keyboardType="email-address"
-                    hint={t.receiptEmailHint}
+                    hint={needsCode ? undefined : t.receiptEmailHint}
+                    required={needsCode}
                   />
+                  {needsCode ? (
+                    <View style={{ gap: 8 }} accessibilityLiveRegion="polite">
+                      {emailVerified ? (
+                        <>
+                          <Text style={styles.codeOk}>✓ {t.emailVerified}</Text>
+                          <Text style={[styles.fieldLabel, { textTransform: "none" }]}>
+                            {t.callNote}
+                          </Text>
+                        </>
+                      ) : codeSentTo === typedEmail ? (
+                        <>
+                          <Text style={[styles.fieldLabel, { textTransform: "none" }]}>
+                            {t.codeSent}
+                          </Text>
+                          <View style={styles.giftEnterRow}>
+                            <TextInput
+                              value={code}
+                              onChangeText={(v) => setCode(v.replace(/\D/g, "").slice(0, 6))}
+                              placeholder="123456"
+                              placeholderTextColor={colors.inkSoft}
+                              keyboardType="number-pad"
+                              textContentType="oneTimeCode"
+                              autoComplete="one-time-code"
+                              maxLength={6}
+                              accessibilityLabel={t.codeLabel}
+                              onSubmitEditing={() => void confirmCode()}
+                              style={[styles.giftInput, { letterSpacing: 6, textAlign: "center" }]}
+                            />
+                            <Pressable
+                              onPress={() => void confirmCode()}
+                              disabled={codeBusy || code.length !== 6}
+                              accessibilityRole="button"
+                              accessibilityLabel={t.confirmCode}
+                              style={({ pressed }) => [
+                                styles.giftApply,
+                                (codeBusy || code.length !== 6) && { opacity: 0.5 },
+                                pressed && { opacity: 0.75 },
+                              ]}
+                            >
+                              <Text style={styles.giftApplyText}>{t.confirmCode}</Text>
+                            </Pressable>
+                          </View>
+                          <Pressable
+                            onPress={() => void sendCode()}
+                            disabled={codeBusy}
+                            accessibilityRole="button"
+                          >
+                            <Text style={styles.codeLink}>{t.resendCode}</Text>
+                          </Pressable>
+                        </>
+                      ) : (
+                        <Pressable
+                          onPress={() => void sendCode()}
+                          disabled={codeBusy || !emailLooksValid}
+                          accessibilityRole="button"
+                          accessibilityLabel={t.sendCode}
+                          style={({ pressed }) => [
+                            styles.giftApply,
+                            { alignSelf: "flex-start" },
+                            (codeBusy || !emailLooksValid) && { opacity: 0.5 },
+                            pressed && { opacity: 0.75 },
+                          ]}
+                        >
+                          <Text style={styles.giftApplyText}>{t.sendCode}</Text>
+                        </Pressable>
+                      )}
+                      {codeError ? (
+                        <Text accessibilityRole="alert" style={styles.codeErr}>
+                          {codeError}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ) : null}
                   {orderType === "delivery" && !addressFieldsOpen ? (
                     /* The address the app already knows, as a card. One tap on
                    "Change" turns it back into the fields — a returning
@@ -1903,6 +2043,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.red,
   },
   giftApplyText: { color: colors.onRed, ...fonts.bodyBold, fontSize: 13.5 },
+  codeOk: { color: "#2f6b3a", ...fonts.bodyBold, fontSize: 14 },
+  codeErr: { color: colors.danger, ...fonts.body, fontSize: 13 },
+  codeLink: {
+    color: colors.inkSoft,
+    ...fonts.bodySemi,
+    fontSize: 12.5,
+    textDecorationLine: "underline",
+  },
   // The one warning on this screen a guest can lose money by ignoring,
   // so it gets the danger tint rather than the quiet gold of a hint.
   forfeitBox: {

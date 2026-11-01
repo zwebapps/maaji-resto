@@ -21,6 +21,7 @@ import { useAuth } from "../auth";
 import type { StaffOrder } from "../staff";
 import {
   acceptStaffOrder,
+  rejectStaffOrder,
   advanceStaffOrder,
   fetchStaffIssues,
   fetchStaffOrders,
@@ -838,6 +839,40 @@ export function BoardScreen({
     say(order.id, "failed");
   }
 
+  /** Reject a cash order the confirmation call could not confirm (owner,
+   *  2026-11-01) — asks first; the guest gets an email. */
+  function reject(order: StaffOrder): void {
+    if (!staffToken || busyId) return;
+    Alert.alert(t.confirmReject, fill(t.confirmRejectAsk, { label: orderLabelOf(order) }), [
+      { text: t.boardCancelKeep, style: "cancel" },
+      {
+        text: t.confirmReject,
+        style: "destructive",
+        onPress: () => {
+          void (async () => {
+            setNote(null);
+            setBusyId(order.id);
+            const res = await rejectStaffOrder(staffToken, order.id);
+            setBusyId(null);
+            if (res.ok) {
+              const updated = res.data;
+              if (updated)
+                setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+              else void load("full");
+              return;
+            }
+            if (res.error === "unauthorized") {
+              clearStaff();
+              return;
+            }
+            say(order.id, res.error === "conflict" ? "moved" : "failed");
+            void load("full");
+          })();
+        },
+      },
+    ]);
+  }
+
   /** Accept a new order with the promised minutes. A refusal means the
    *  accept window closed or another device answered: re-read the board. */
   async function accept(order: StaffOrder, minutes: number): Promise<void> {
@@ -1045,8 +1080,10 @@ export function BoardScreen({
           closed && styles.cardClosed,
           scheduled && styles.cardScheduled,
           lit && styles.cardFresh,
+          order.confirmation && styles.cardConfirm,
         ]}
       >
+        {order.confirmation ? <Text style={styles.confirmBanner}>{t.confirmBanner}</Text> : null}
         {/* The headline: everything the pass needs to triage at a glance,
             and the tap target that reveals the rest. */}
         <Pressable
@@ -1147,6 +1184,23 @@ export function BoardScreen({
         {/* A new order inside its accept window: the time between a red −
             and a red +, and one button that accepts WITH it. Outside the
             fold on purpose — it must not need a tap to find. */}
+        {/* A cash order waiting for its confirmation call: call, then
+            Accept (with the time, no countdown) or Reject. */}
+        {order.confirmation ? (
+          <ConfirmAccept
+            key={order.id}
+            orderType={order.orderType}
+            phone={order.customerPhone}
+            timed={order.confirmation.timed}
+            defaultMinutes={order.confirmation.defaultMinutes}
+            busy={busy}
+            timeOf={timeOf}
+            onCall={(phone) => callPhone(phone)}
+            onAccept={(minutes) => void accept(order, minutes)}
+            onReject={() => reject(order)}
+          />
+        ) : null}
+
         {order.eta && etaOpen && order.eta.adjustableUntil ? (
           <EtaAccept
             key={order.id}
@@ -1257,7 +1311,7 @@ export function BoardScreen({
                 confirm. `row` + start/end padding mirror themselves in
                 an RTL layout, so there is nothing to flip by hand. */}
             <View style={[styles.footRow, tightFoot && styles.footRowWrap]}>
-              {nextTo && !etaOpen ? (
+              {nextTo && !etaOpen && !order.confirmation ? (
                 <Pressable
                   onPress={() => onAction(order, nextTo)}
                   disabled={busy}
@@ -1736,6 +1790,108 @@ const ETA_MAX = 180;
  * board, which swaps it for the ordinary step button; the default time
  * then stands.
  */
+/**
+ * A cash order still waiting for its confirmation call (owner,
+ * 2026-11-01): the guest's number, then the same − / + as every accept
+ * but with no countdown — the call takes as long as it takes, and the
+ * time counts from the moment of accepting — and Reject.
+ */
+function ConfirmAccept({
+  orderType,
+  phone,
+  timed,
+  defaultMinutes,
+  busy,
+  timeOf,
+  onCall,
+  onAccept,
+  onReject,
+}: {
+  orderType: string;
+  phone: string | null;
+  timed: boolean;
+  defaultMinutes: number;
+  busy: boolean;
+  timeOf: (iso: string) => string;
+  onCall: (phone: string) => void;
+  onAccept: (minutes: number) => void;
+  onReject: () => void;
+}): React.ReactElement {
+  const { t } = useI18n();
+  const [minutes, setMinutes] = useState(defaultMinutes);
+  const at = timeOf(new Date(Date.now() + minutes * 60_000).toISOString());
+  return (
+    <View style={[styles.eta, styles.confirmBox]}>
+      {phone ? (
+        <Pressable
+          onPress={() => onCall(phone)}
+          accessibilityRole="button"
+          accessibilityLabel={`${t.boardCall} ${phone}`}
+          style={({ pressed }) => [styles.confirmCall, pressed && { opacity: 0.6 }]}
+        >
+          <Text style={styles.confirmCallText}>📞 {phone}</Text>
+        </Pressable>
+      ) : null}
+      {timed ? (
+        <>
+          <Text style={styles.etaLabel}>
+            {orderType === "delivery" ? t.etaSetDelivery : t.etaSetPickup}
+          </Text>
+          <View style={styles.etaRow}>
+            <Pressable
+              onPress={() => setMinutes((m) => Math.max(ETA_MIN, m - ETA_STEP))}
+              disabled={busy || minutes <= ETA_MIN}
+              accessibilityRole="button"
+              accessibilityLabel={t.etaLess}
+              style={({ pressed }) => [
+                styles.etaStep,
+                (pressed || minutes <= ETA_MIN) && { opacity: 0.5 },
+              ]}
+            >
+              <Ionicons name="remove" size={26} color={colors.onRed} />
+            </Pressable>
+            <View style={styles.etaMiddle}>
+              <Text style={styles.etaMinutes}>{minutes} min</Text>
+              <Text style={styles.etaAt}>{fill(t.etaAround, { time: at })}</Text>
+            </View>
+            <Pressable
+              onPress={() => setMinutes((m) => Math.min(ETA_MAX, m + ETA_STEP))}
+              disabled={busy || minutes >= ETA_MAX}
+              accessibilityRole="button"
+              accessibilityLabel={t.etaMore}
+              style={({ pressed }) => [
+                styles.etaStep,
+                (pressed || minutes >= ETA_MAX) && { opacity: 0.5 },
+              ]}
+            >
+              <Ionicons name="add" size={26} color={colors.onRed} />
+            </Pressable>
+          </View>
+        </>
+      ) : null}
+      <Pressable
+        onPress={() => onAccept(minutes)}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: busy }}
+        style={({ pressed }) => [styles.confirmAccept, (busy || pressed) && { opacity: 0.6 }]}
+      >
+        <Text style={styles.etaAcceptText}>
+          {timed ? fill(t.confirmAcceptMin, { n: minutes }) : t.confirmAccept}
+        </Text>
+      </Pressable>
+      <Pressable
+        onPress={onReject}
+        disabled={busy}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.confirmReject, (busy || pressed) && { opacity: 0.6 }]}
+      >
+        <Text style={styles.confirmRejectText}>{t.confirmReject}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function EtaAccept({
   orderType,
   defaultMinutes,
@@ -1909,6 +2065,45 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   etaAcceptText: { color: colors.onRed, ...fonts.bodyBold, fontSize: 15 },
+  cardConfirm: { borderColor: "#b3261e", borderWidth: 2, backgroundColor: "#fdecea" },
+  confirmBanner: {
+    color: "#ffffff",
+    backgroundColor: "#b3261e",
+    ...fonts.bodyBold,
+    fontSize: 12.5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.md,
+    marginBottom: 8,
+    overflow: "hidden",
+  },
+  confirmBox: { borderColor: "#b3261e", backgroundColor: "#ffffff" },
+  confirmCall: {
+    minHeight: 44,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: "#b3261e",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  confirmCallText: { color: "#b3261e", ...fonts.bodyBold, fontSize: 15 },
+  confirmAccept: {
+    minHeight: 46,
+    borderRadius: radius.md,
+    backgroundColor: "#2f6b3a",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  confirmReject: {
+    minHeight: 42,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: "#b3261e",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  confirmRejectText: { color: "#b3261e", ...fonts.bodyBold, fontSize: 14 },
   offline: {
     color: colors.inkSoft,
     ...fonts.bodySemi,

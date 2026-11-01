@@ -8,14 +8,22 @@ import { fulfilmentLines } from "@/lib/ordering-config";
 import { GIFT_CARD_PROVIDER, listRecentOrders, VOUCHER_PROVIDER } from "@/lib/order-service";
 import { formatPrice } from "@/lib/public-menu";
 import { onlinePaymentLabel } from "@/lib/payment-methods";
-import { acceptOrderAction, advanceOrderAction, deleteOrderAction } from "./actions";
+import {
+  acceptOrderAction,
+  advanceOrderAction,
+  confirmOrderAction,
+  deleteOrderAction,
+  rejectOrderAction,
+} from "./actions";
+import { ConfirmCashOrder } from "./confirm-cash-order";
 import { AcceptWithTime } from "./accept-with-time";
-import { boardedAt, orderEta } from "@/lib/order-eta";
+import { boardedAt, defaultEtaMinutes, etaApplies, orderEta } from "@/lib/order-eta";
 import { getOrderingSettings } from "@/lib/venue-service";
 import { parseOrderingConfig } from "@/lib/ordering-config";
 import {
   advanceIcon,
   advanceLabel,
+  awaitingConfirmation,
   isCancelledStatus,
   isOpenStatus,
   nextStatus,
@@ -290,7 +298,8 @@ export default async function OrdersPage({
               orderNumber: o.orderNumber,
               orderSeries: o.orderSeries ?? null,
               paymentStatus: o.paymentStatus,
-              awaitingAccept: Boolean(orderEta(o, etaConfig)?.adjustableUntil),
+              awaitingAccept:
+                awaitingConfirmation(o) || Boolean(orderEta(o, etaConfig)?.adjustableUntil),
             }))}
           />
         </div>
@@ -308,9 +317,18 @@ export default async function OrdersPage({
               <li
                 key={order.id}
                 className={`flex flex-col px-5 py-4 ${
-                  isScheduled(order) ? SCHEDULED_CARD : "border-2 border-orange/60 bg-card"
+                  awaitingConfirmation(order)
+                    ? "border-2 border-[#b3261e] bg-[#fdecea]"
+                    : isScheduled(order)
+                      ? SCHEDULED_CARD
+                      : "border-2 border-orange/60 bg-card"
                 }`}
               >
+                {awaitingConfirmation(order) ? (
+                  <p className="-mx-5 -mt-4 mb-3 bg-[#b3261e] px-5 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-white">
+                    Waiting for confirmation — call the guest
+                  </p>
+                ) : null}
                 {(() => {
                   // The promised time, once fixed — what the guest sees.
                   const eta = orderEta(order, etaConfig);
@@ -465,6 +483,23 @@ export default async function OrdersPage({
                     ) : null;
                     // Inside the accept window the card asks for the time
                     // instead; when it closes, the plain button returns.
+                    // A cash order still waiting for its call: Accept / Reject.
+                    if (awaitingConfirmation(order)) {
+                      return (
+                        <ConfirmCashOrder
+                          key={order.id}
+                          orderId={order.id}
+                          label={orderLabel(order)}
+                          orderType={order.orderType}
+                          phone={order.customerPhone ?? null}
+                          timed={etaApplies(order)}
+                          defaultMinutes={defaultEtaMinutes(order.orderType, etaConfig)}
+                          timezone="Europe/Berlin"
+                          acceptAction={confirmOrderAction}
+                          rejectAction={rejectOrderAction}
+                        />
+                      );
+                    }
                     const eta = orderEta(order, etaConfig);
                     return eta?.adjustableUntil ? (
                       <AcceptWithTime

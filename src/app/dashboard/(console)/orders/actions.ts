@@ -3,7 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { deleteOrder } from "@/lib/order-delete-service";
-import { acceptOrderWithEta, advanceOrderStatus, markOrderDone } from "@/lib/order-service";
+import {
+  acceptOrderWithEta,
+  advanceOrderStatus,
+  confirmCashOrder,
+  markOrderDone,
+  rejectCashOrder,
+} from "@/lib/order-service";
 import { replyToIssue, resolveIssue } from "@/lib/issue-service";
 import { can, getAccess, requirePermission } from "@/lib/team-access";
 
@@ -95,6 +101,26 @@ export async function acceptOrderAction(form: FormData): Promise<void> {
   const orderId = String(form.get("orderId") ?? "");
   const minutes = Number(form.get("minutes"));
   if (orderId && Number.isFinite(minutes)) await acceptOrderWithEta(userId, orderId, minutes);
+  revalidatePath("/dashboard/orders", "page");
+  revalidatePath("/kitchen", "page");
+}
+
+/** Accept a cash order after the confirmation call (owner, 2026-11-01). */
+export async function confirmOrderAction(form: FormData): Promise<void> {
+  const userId = await requirePermission("orders");
+  const orderId = String(form.get("orderId") ?? "");
+  const minutes = Number(form.get("minutes"));
+  if (orderId)
+    await confirmCashOrder(userId, orderId, Number.isFinite(minutes) ? minutes : undefined);
+  revalidatePath("/dashboard/orders", "page");
+  revalidatePath("/kitchen", "page");
+}
+
+/** Reject a cash order the call could not confirm; the guest is emailed. */
+export async function rejectOrderAction(form: FormData): Promise<void> {
+  const userId = await requirePermission("orders");
+  const orderId = String(form.get("orderId") ?? "");
+  if (orderId) await rejectCashOrder(userId, orderId);
   revalidatePath("/dashboard/orders", "page");
   revalidatePath("/kitchen", "page");
 }
