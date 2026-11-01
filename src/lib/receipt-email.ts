@@ -1,4 +1,4 @@
-import { sendEmail } from "./email";
+import { sendEmail, type EmailAttachment } from "./email";
 import { createLogger } from "./logger";
 import { captureException } from "./observability";
 import { getOrderForReceipt } from "./order-service";
@@ -6,6 +6,8 @@ import { signReceiptToken } from "./receipt-token";
 import { siteUrl } from "./site-url";
 import { uiLocale } from "./locales";
 import { trackedReviewUrl, venueReviewLink } from "./google-rating";
+import { buildReceiptPdf } from "./receipt-pdf";
+import { receiptLogoPng, receiptPdfFilename } from "./receipt-document";
 import { ReceiptEmail, receiptSubject } from "@/emails/receipt-email";
 
 const log = createLogger();
@@ -54,8 +56,23 @@ export async function sendReceiptEmailForOrder(
     // way, because a second tap is a no-op.
     const review = order.venueId ? await venueReviewLink(tenantId, order.venueId) : null;
 
+    // The same PDF the "download receipt" button serves, attached so the
+    // guest has it offline and in their mail archive (owner, 2026-11-01).
+    // A PDF that fails to build costs the attachment, never the email.
+    let attachments: EmailAttachment[] = [];
+    try {
+      const pdf = await buildReceiptPdf(order, locale, await receiptLogoPng(order.venue.logoKey));
+      attachments = [
+        { filename: receiptPdfFilename(order), content: pdf, contentType: "application/pdf" },
+      ];
+    } catch (err) {
+      captureException(err, { orderId, tenantId, where: "receipt-email.pdf" });
+      log.warn("receipt.pdf_attach_failed", { orderId, tenantId });
+    }
+
     await sendEmail({
       to: order.customerEmail,
+      attachments,
       subject: receiptSubject(order, locale),
       react: ReceiptEmail({
         order,

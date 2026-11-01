@@ -17,10 +17,18 @@ async function renderHtml(el: ReactElement): Promise<string> {
  * Templates are React components rendered to a static HTML string here —
  * the transport never sees JSX.
  */
+export interface EmailAttachment {
+  filename: string;
+  content: Uint8Array;
+  contentType: string;
+}
+
 export interface SendEmailInput {
   to: string;
   subject: string;
   react: ReactElement;
+  /** Files sent with the mail — the order confirmation's receipt PDF. */
+  attachments?: EmailAttachment[];
 }
 
 export interface SentMessage {
@@ -37,7 +45,13 @@ export async function sendEmail(input: SendEmailInput): Promise<SentMessage> {
   const settings = await getOperatorSettings();
   const transport = settings.emailTransport ?? env.EMAIL_TRANSPORT;
   const from = settings.emailFrom ?? env.EMAIL_FROM;
-  const payload = { from, to: input.to, subject: input.subject, html };
+  const payload = {
+    from,
+    to: input.to,
+    subject: input.subject,
+    html,
+    attachments: input.attachments ?? [],
+  };
 
   switch (transport) {
     case "mailhog":
@@ -55,6 +69,7 @@ interface Payload {
   to: string;
   subject: string;
   html: string;
+  attachments: EmailAttachment[];
 }
 
 async function sendViaMailhog(p: Payload): Promise<SentMessage> {
@@ -70,7 +85,14 @@ async function sendViaMailhog(p: Payload): Promise<SentMessage> {
     // frictionless.
     ignoreTLS: true,
   });
-  const info = await transport.sendMail(p);
+  const info = await transport.sendMail({
+    ...p,
+    attachments: p.attachments.map((a) => ({
+      filename: a.filename,
+      content: Buffer.from(a.content),
+      contentType: a.contentType,
+    })),
+  });
   return { transport: "mailhog", messageId: info.messageId };
 }
 
@@ -85,6 +107,15 @@ async function sendViaResend(p: Payload): Promise<SentMessage> {
     to: p.to,
     subject: p.subject,
     html: p.html,
+    ...(p.attachments.length > 0
+      ? {
+          attachments: p.attachments.map((a) => ({
+            filename: a.filename,
+            content: Buffer.from(a.content),
+            contentType: a.contentType,
+          })),
+        }
+      : {}),
   });
   if (error) throw new Error(`Resend send failed: ${error.message}`);
   return { transport: "resend", messageId: data?.id };

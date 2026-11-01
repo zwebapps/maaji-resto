@@ -389,6 +389,26 @@ describe.runIf(env.EMAIL_TRANSPORT === "mailhog")("receipt email delivery", () =
     expect(body).toContain("Bewerten Sie uns bei Google");
   });
 
+  it("attaches the receipt PDF — the same file the download button serves", async () => {
+    const fx = await fixture();
+    const to = `pdf-${randomUUID()}@ex.com`;
+    const placed = await placeOrder(fx, {
+      items: [{ itemId: fx.itemId, quantity: 1 }],
+      customerEmail: to,
+    });
+    if (!placed.ok) throw new Error("order failed");
+
+    expect(await sendReceiptEmailForOrder(fx.tenantId, placed.value.orderId)).toEqual({
+      sent: true,
+    });
+    const raw = (await mailFor(to))[0]!.body;
+    // A multipart mail with a PDF part named after the guest-facing code…
+    expect(raw).toMatch(/Content-Type: application\/pdf/i);
+    expect(raw).toMatch(new RegExp(`filename="?receipt-rcpt-[a-z0-9]+-${orderCode("B", 1)}\\.pdf`));
+    // …whose bytes really are a PDF ("%PDF-" is "JVBERi0" in base64).
+    expect(raw).toContain("JVBERi0");
+  });
+
   it("mails the receipt to the guest's address; skips silently when none was given", async () => {
     const fx = await fixture();
     const to = `guest-${randomUUID()}@ex.com`;
