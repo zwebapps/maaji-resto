@@ -5,21 +5,24 @@ import { formatPrice } from "@/lib/public-menu";
 import { receiptCopy } from "@/lib/i18n/emails";
 import { dirFor, type UiLocale } from "@/lib/locales";
 import { vatFromGross } from "@/lib/vat";
+import { EMAIL, EMAIL_CSS, EMAIL_FONT, EmailHeader, FooterBand, emailAsset } from "./layout";
+
+/* eslint-disable @next/next/no-head-element, @next/next/no-img-element -- email
+   HTML, not a Next page: a real <head> and plain <img> are exactly right. */
 
 /**
  * The order e-mail — what a guest receives the moment they order (cash) or
- * once an online payment settles. The owner's design (2026-09-22): brand
- * header, green "Thank you" card, the order card, a payment line, three
- * promises, and a dark-green footer with the restaurant's address, phone
- * and site.
+ * once an online payment settles. The owner's design (2026-11-01 mockup):
+ * cream brand banner, a pale-green "thank you" card with corner flowers,
+ * then one order card — number and date, the items under a beige header
+ * band, net/VAT, the total on a green band, the payment note, the track
+ * button, three promises with icons — closed by the dark-green footer band
+ * with the restaurant's address, phone and site.
  *
- * Built for mail clients, not browsers: tables for layout, inline styles,
- * system fonts. The brand lettering (chunky logo type, script tagline) is
- * ONE image (`/brand/email-header.png`) because custom fonts don't survive
- * Gmail/Outlook. Everything else is live text in the guest's language
- * (`src/lib/i18n/emails.ts`); `dir` flips the whole mail for Arabic.
- *
- * Same numbers as the PDF: gross prices, VAT shown as contained.
+ * Banner, flowers, icons and ornaments are images cut from the mockup
+ * (`/public/brand/email`); every word and number is live text in the
+ * guest's language (`src/lib/i18n/emails.ts`), and `dir` flips the whole
+ * mail for Arabic. Same numbers as the PDF: gross prices, VAT contained.
  */
 export interface ReceiptEmailProps {
   order: ReceiptOrder;
@@ -34,22 +37,8 @@ export interface ReceiptEmailProps {
   siteBase?: string;
 }
 
-const C = {
-  page: "#f3f5ef",
-  card: "#ffffff",
-  line: "#e3e8de",
-  greenSoft: "#eaf4e2",
-  green: "#1e5b2c",
-  greenDark: "#0f3d1f",
-  ink: "#1f2a1f",
-  muted: "#5f6b5f",
-  lime: "#c9e265",
-  warnBg: "#fde8e8",
-  warnInk: "#a4231b",
-  okBg: "#e3f2e1",
-  okInk: "#1e5b2c",
-};
-const FONT = "Arial, 'Helvetica Neue', Helvetica, sans-serif";
+const C = EMAIL;
+const FONT = EMAIL_FONT;
 
 function orderNo(order: ReceiptOrder): string {
   return orderLabel(order);
@@ -74,15 +63,15 @@ function LinkButton({
       style={{
         display: "inline-block",
         margin: "6px 4px",
-        padding: "12px 20px",
+        padding: solid ? "14px 30px" : "12px 22px",
         borderRadius: 999,
         fontFamily: FONT,
-        fontSize: 14,
+        fontSize: solid ? 16 : 14,
         fontWeight: 700,
         textDecoration: "none",
-        backgroundColor: solid ? C.green : C.card,
-        color: solid ? "#ffffff" : C.green,
-        border: `2px solid ${C.green}`,
+        backgroundColor: solid ? C.accent : C.card,
+        color: solid ? "#ffffff" : C.accent,
+        border: `2px solid ${C.accent}`,
       }}
     >
       {label}
@@ -139,17 +128,14 @@ export function ReceiptEmail({
   const whereLine =
     order.orderType === "dine_in"
       ? order.tableNumber
-        ? `🍽️ ${t.table} ${order.tableNumber}`
+        ? `${t.table} ${order.tableNumber}`
         : null
-      : `${order.orderType === "delivery" ? "🛵" : "🛍️"} ${
-          order.orderType === "delivery" ? t.delivery : t.pickup
-        } · ${t.planned} ${when}`;
+      : `${order.orderType === "delivery" ? t.delivery : t.pickup} · ${t.planned} ${when}`;
 
-  const footer = order.venueFooter ?? { address: null, phone: null, phoneHref: null };
-  const site = siteBase.replace(/^https?:\/\//, "").replace(/\/$/, "");
-  const cell = { fontFamily: FONT, color: C.ink, fontSize: 15, padding: "10px 16px" };
-  // A green band across two cells: round only the outer corners, so it
-  // reads as one pill in either reading direction.
+  const img = (name: string): string => emailAsset(siteBase, name);
+  const cell = { fontFamily: FONT, color: C.ink, fontSize: 15, padding: "9px 16px" };
+  // A band across two cells: round only the outer corners, so it reads as
+  // one pill in either reading direction.
   const bandStart = dir === "rtl" ? "0 10px 10px 0" : "10px 0 0 10px";
   const bandEnd = dir === "rtl" ? "10px 0 0 10px" : "0 10px 10px 0";
   const row = (label: React.ReactNode, value: string, style: object = {}): React.ReactElement => (
@@ -158,6 +144,43 @@ export function ReceiptEmail({
       <td style={{ ...cell, textAlign: end, whiteSpace: "nowrap", ...style }}>{value}</td>
     </tr>
   );
+  // Corner flowers of the thank-you card, swapped with the reading direction.
+  const [flowerStart, flowerEnd] =
+    dir === "rtl" ? ["flower-end", "flower-start"] : ["flower-start", "flower-end"];
+  const flower = (name: string): React.ReactElement => (
+    <td
+      className="m-hide"
+      width={52}
+      valign="top"
+      style={{ width: 52, padding: "8px", lineHeight: 0 }}
+    >
+      {siteBase ? (
+        <img
+          src={img(name)}
+          width={52}
+          alt=""
+          style={{ display: "block", width: 52, height: "auto", border: 0 }}
+        />
+      ) : null}
+    </td>
+  );
+  const icon = (name: string, size: number, fallback: string): React.ReactNode =>
+    siteBase ? (
+      <img
+        src={img(name)}
+        width={size}
+        alt=""
+        style={{
+          display: "inline-block",
+          width: size,
+          height: "auto",
+          border: 0,
+          verticalAlign: "middle",
+        }}
+      />
+    ) : (
+      fallback
+    );
 
   return (
     <html lang={locale} dir={dir}>
@@ -166,6 +189,7 @@ export function ReceiptEmail({
         <meta name="viewport" content="width=device-width" />
         <meta name="color-scheme" content="light" />
         <title>{t.heading(orderNo(order))}</title>
+        <style>{EMAIL_CSS}</style>
       </head>
       <body style={{ margin: 0, padding: 0, backgroundColor: C.page }}>
         {/* Preheader: what most inboxes show beside the subject. */}
@@ -188,92 +212,49 @@ export function ReceiptEmail({
                   cellPadding={0}
                   cellSpacing={0}
                   dir={dir}
-                  style={{
-                    width: "100%",
-                    maxWidth: 600,
-                    backgroundColor: C.card,
-                    borderRadius: 18,
-                    overflow: "hidden",
-                  }}
+                  style={{ width: "100%", maxWidth: 600 }}
                 >
                   <tbody>
-                    {/* 1 · Brand header (one image — see the note above). */}
-                    <tr>
-                      <td align="center" style={{ padding: "18px 16px 6px" }}>
-                        {siteBase ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={`${siteBase}/brand/email-header.png`}
-                            width={560}
-                            alt={order.venue.name}
-                            style={{
-                              display: "block",
-                              width: "100%",
-                              maxWidth: 560,
-                              height: "auto",
-                              border: 0,
-                            }}
-                          />
-                        ) : (
-                          <p
-                            style={{
-                              fontFamily: FONT,
-                              fontSize: 24,
-                              fontWeight: 700,
-                              color: C.green,
-                              margin: 0,
-                            }}
-                          >
-                            {order.venue.name}
-                          </p>
-                        )}
-                      </td>
-                    </tr>
+                    {/* 1 · Brand banner. */}
+                    <EmailHeader siteBase={siteBase} name={order.venue.name} />
 
                     {/* 2 · Thank you. */}
                     <tr>
-                      <td style={{ padding: "8px 20px" }}>
+                      <td style={{ padding: "0 16px 14px" }}>
                         <table
                           role="presentation"
                           width="100%"
                           cellPadding={0}
                           cellSpacing={0}
-                          style={{ backgroundColor: C.greenSoft, borderRadius: 16 }}
+                          style={{ backgroundColor: C.soft, borderRadius: 16 }}
                         >
                           <tbody>
                             <tr>
-                              <td align="center" style={{ padding: "22px 18px 24px" }}>
-                                <table role="presentation" cellPadding={0} cellSpacing={0}>
-                                  <tbody>
-                                    <tr>
-                                      <td
-                                        align="center"
-                                        width={60}
-                                        height={60}
-                                        style={{
-                                          width: 60,
-                                          height: 60,
-                                          borderRadius: 30,
-                                          backgroundColor: C.greenDark,
-                                          color: "#ffffff",
-                                          fontFamily: FONT,
-                                          fontSize: 32,
-                                          fontWeight: 700,
-                                          lineHeight: "60px",
-                                        }}
-                                      >
-                                        ✓
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
+                              {flower(flowerStart)}
+                              <td align="center" style={{ padding: "18px 6px 22px" }}>
+                                {siteBase ? (
+                                  <img
+                                    src={img("check")}
+                                    width={64}
+                                    alt=""
+                                    style={{
+                                      display: "block",
+                                      width: 64,
+                                      height: "auto",
+                                      border: 0,
+                                      margin: "0 auto",
+                                    }}
+                                  />
+                                ) : (
+                                  <span style={{ fontSize: 32, color: C.accent }}>✓</span>
+                                )}
                                 <h1
                                   style={{
                                     fontFamily: FONT,
-                                    fontSize: 36,
-                                    lineHeight: "42px",
-                                    color: C.greenDark,
-                                    margin: "14px 0 6px",
+                                    fontSize: 38,
+                                    lineHeight: "44px",
+                                    color: C.accentDark,
+                                    margin: "10px 0 4px",
                                   }}
                                 >
                                   {t.thankYou}
@@ -283,8 +264,8 @@ export function ReceiptEmail({
                                     fontFamily: FONT,
                                     fontSize: 19,
                                     fontWeight: 700,
-                                    color: C.ink,
-                                    margin: "0 0 6px",
+                                    color: C.accentDark,
+                                    margin: "0 0 8px",
                                   }}
                                 >
                                   {t.received}
@@ -300,21 +281,23 @@ export function ReceiptEmail({
                                   {t.preparing}
                                 </p>
                               </td>
+                              {flower(flowerEnd)}
                             </tr>
                           </tbody>
                         </table>
                       </td>
                     </tr>
 
-                    {/* 3 · The order. */}
+                    {/* 3 · The order card, closed by the footer band. */}
                     <tr>
-                      <td style={{ padding: "10px 20px" }}>
+                      <td style={{ padding: "0 16px" }}>
                         <table
                           role="presentation"
                           width="100%"
                           cellPadding={0}
                           cellSpacing={0}
                           style={{
+                            backgroundColor: C.card,
                             border: `1px solid ${C.line}`,
                             borderRadius: 14,
                             borderCollapse: "separate",
@@ -322,41 +305,67 @@ export function ReceiptEmail({
                         >
                           <tbody>
                             <tr>
-                              <td style={{ ...cell, textAlign: start, paddingTop: 16 }}>
-                                <span style={{ color: C.muted, fontSize: 14 }}>
-                                  {t.orderNumber}
-                                </span>
-                                <br />
-                                <strong style={{ fontSize: 30, color: C.greenDark }}>
-                                  #{orderNo(order)}
-                                </strong>
-                              </td>
-                              <td
-                                style={{
-                                  ...cell,
-                                  textAlign: end,
-                                  color: C.muted,
-                                  fontSize: 14,
-                                  paddingTop: 16,
-                                }}
-                              >
-                                {placed}
-                                <br />
-                                {placedTime}
-                              </td>
-                            </tr>
-                            {whereLine ? (
-                              <tr>
-                                <td
-                                  colSpan={2}
-                                  style={{ ...cell, textAlign: start, paddingTop: 0, fontSize: 14 }}
+                              <td style={{ padding: "18px 12px 6px" }}>
+                                <table
+                                  role="presentation"
+                                  width="100%"
+                                  cellPadding={0}
+                                  cellSpacing={0}
                                 >
-                                  {whereLine}
-                                </td>
-                              </tr>
-                            ) : null}
-                            <tr>
-                              <td colSpan={2} style={{ padding: "4px 10px" }}>
+                                  <tbody>
+                                    <tr>
+                                      <td style={{ ...cell, textAlign: start, padding: "0 10px" }}>
+                                        <span style={{ color: C.ink, fontSize: 14 }}>
+                                          {t.orderNumber}
+                                        </span>
+                                        <br />
+                                        <strong
+                                          style={{
+                                            fontSize: 30,
+                                            lineHeight: "38px",
+                                            color: C.accent,
+                                          }}
+                                        >
+                                          #{orderNo(order)}
+                                        </strong>
+                                      </td>
+                                      <td
+                                        valign="top"
+                                        style={{
+                                          ...cell,
+                                          textAlign: end,
+                                          fontSize: 14,
+                                          lineHeight: "22px",
+                                          padding: "2px 10px 0",
+                                        }}
+                                      >
+                                        {placed}
+                                        <br />
+                                        {placedTime}
+                                      </td>
+                                    </tr>
+                                    {whereLine ? (
+                                      <tr>
+                                        <td
+                                          colSpan={2}
+                                          style={{
+                                            ...cell,
+                                            textAlign: start,
+                                            padding: "8px 10px 12px",
+                                            fontSize: 15,
+                                          }}
+                                        >
+                                          {icon("bag", 18, "🛍️")}
+                                          <span style={{ verticalAlign: "middle" }}>
+                                            &nbsp; {whereLine}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ) : null}
+                                  </tbody>
+                                </table>
+
+                                {/* Items, adjustments, net/VAT, total. */}
                                 <table
                                   role="presentation"
                                   width="100%"
@@ -370,9 +379,11 @@ export function ReceiptEmail({
                                           ...cell,
                                           textAlign: start,
                                           fontWeight: 700,
-                                          backgroundColor: C.greenSoft,
+                                          fontSize: 17,
+                                          backgroundColor: C.band,
                                           borderRadius: bandStart,
-                                          color: C.greenDark,
+                                          color: C.accentDark,
+                                          padding: "12px 18px",
                                         }}
                                       >
                                         {t.item}
@@ -382,17 +393,30 @@ export function ReceiptEmail({
                                           ...cell,
                                           textAlign: end,
                                           fontWeight: 700,
-                                          backgroundColor: C.greenSoft,
+                                          fontSize: 17,
+                                          backgroundColor: C.band,
                                           borderRadius: bandEnd,
-                                          color: C.greenDark,
+                                          color: C.accentDark,
+                                          padding: "12px 18px",
                                         }}
                                       >
                                         {t.price}
                                       </td>
                                     </tr>
+                                    <tr>
+                                      <td colSpan={2} style={{ height: 6 }} />
+                                    </tr>
                                     {order.items.map((item, i) => (
                                       <tr key={i}>
-                                        <td style={{ ...cell, textAlign: start, fontWeight: 700 }}>
+                                        <td
+                                          style={{
+                                            ...cell,
+                                            textAlign: start,
+                                            fontWeight: 700,
+                                            fontSize: 16,
+                                            color: C.accentDark,
+                                          }}
+                                        >
                                           {item.quantity} × {item.name}
                                         </td>
                                         <td
@@ -400,6 +424,8 @@ export function ReceiptEmail({
                                             ...cell,
                                             textAlign: end,
                                             fontWeight: 700,
+                                            fontSize: 16,
+                                            color: C.accentDark,
                                             whiteSpace: "nowrap",
                                           }}
                                         >
@@ -431,19 +457,25 @@ export function ReceiptEmail({
                                       : null}
                                     {row(t.net, money(net), {
                                       borderTop: `1px solid ${C.line}`,
-                                      color: C.muted,
+                                      color: C.inkSoft,
+                                      paddingTop: 14,
                                     })}
-                                    {row(t.vat, money(vat), { color: C.muted, paddingTop: 0 })}
+                                    {row(t.vat, money(vat), {
+                                      color: C.inkSoft,
+                                      paddingTop: 0,
+                                      paddingBottom: 12,
+                                    })}
                                     <tr>
                                       <td
                                         style={{
                                           ...cell,
                                           textAlign: start,
-                                          fontSize: 24,
+                                          fontSize: 26,
                                           fontWeight: 700,
-                                          color: C.greenDark,
-                                          backgroundColor: C.greenSoft,
+                                          color: C.accentDark,
+                                          backgroundColor: C.total,
                                           borderRadius: bandStart,
+                                          padding: "12px 18px",
                                         }}
                                       >
                                         {t.total}
@@ -452,12 +484,13 @@ export function ReceiptEmail({
                                         style={{
                                           ...cell,
                                           textAlign: end,
-                                          fontSize: 24,
+                                          fontSize: 26,
                                           fontWeight: 700,
-                                          color: C.greenDark,
-                                          backgroundColor: C.greenSoft,
+                                          color: C.accentDark,
+                                          backgroundColor: C.total,
                                           borderRadius: bandEnd,
                                           whiteSpace: "nowrap",
+                                          padding: "12px 18px",
                                         }}
                                       >
                                         {money(order.totalCents)}
@@ -465,188 +498,129 @@ export function ReceiptEmail({
                                     </tr>
                                   </tbody>
                                 </table>
+
+                                {/* How it is paid. */}
+                                <table
+                                  role="presentation"
+                                  width="100%"
+                                  cellPadding={0}
+                                  cellSpacing={0}
+                                  style={{ marginTop: 18 }}
+                                >
+                                  <tbody>
+                                    <tr>
+                                      <td
+                                        align="center"
+                                        style={{
+                                          fontFamily: FONT,
+                                          fontSize: 16,
+                                          fontWeight: 700,
+                                          padding: "12px 14px",
+                                          borderRadius: 12,
+                                          backgroundColor: paid ? C.positiveBg : C.cream,
+                                          color: paid ? C.positive : C.brown,
+                                        }}
+                                      >
+                                        {paid ? icon("check", 20, "✅") : icon("wallet", 26, "💳")}
+                                        <span style={{ verticalAlign: "middle" }}>
+                                          &nbsp; {paymentLine}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  </tbody>
+                                </table>
                               </td>
                             </tr>
-                            <tr>
-                              <td colSpan={2} style={{ height: 10 }} />
-                            </tr>
-                          </tbody>
-                        </table>
-                      </td>
-                    </tr>
 
-                    {/* 4 · How it is paid. */}
-                    <tr>
-                      <td style={{ padding: "6px 40px" }}>
-                        <table role="presentation" width="100%" cellPadding={0} cellSpacing={0}>
-                          <tbody>
+                            {/* Tracking + receipt (+ the quiet review ask). */}
                             <tr>
-                              <td
-                                align="center"
-                                style={{
-                                  fontFamily: FONT,
-                                  fontSize: 16,
-                                  fontWeight: 700,
-                                  padding: "12px 14px",
-                                  borderRadius: 12,
-                                  backgroundColor: paid ? C.okBg : C.warnBg,
-                                  color: paid ? C.okInk : C.warnInk,
-                                }}
-                              >
-                                {paid ? "✅" : "💳"} {paymentLine}
+                              <td align="center" style={{ padding: "12px 16px 4px" }}>
+                                <LinkButton
+                                  href={trackUrl}
+                                  label={`${t.track}  ${dir === "rtl" ? "←" : "→"}`}
+                                  solid
+                                />
+                                <br />
+                                <LinkButton href={receiptUrl} label={t.pdf} />
+                                {reviewUrl ? <LinkButton href={reviewUrl} label={t.rate} /> : null}
                               </td>
                             </tr>
-                          </tbody>
-                        </table>
-                      </td>
-                    </tr>
 
-                    {/* 5 · Receipt + tracking (+ the quiet review ask). */}
-                    <tr>
-                      <td align="center" style={{ padding: "12px 16px 4px" }}>
-                        <LinkButton href={trackUrl} label={t.track} solid />
-                        <LinkButton href={receiptUrl} label={t.pdf} />
-                        {reviewUrl ? <LinkButton href={reviewUrl} label={t.rate} /> : null}
-                      </td>
-                    </tr>
-
-                    {/* 6 · Three promises. */}
-                    <tr>
-                      <td style={{ padding: "14px 16px 18px" }}>
-                        <table role="presentation" width="100%" cellPadding={0} cellSpacing={0}>
-                          <tbody>
+                            {/* Three promises. */}
                             <tr>
-                              {[
-                                ["🌿", t.featFresh],
-                                ["👨‍🍳", t.featAuthentic],
-                                ["💚", t.featHospitality],
-                              ].map(([icon, label], i) => (
-                                <td
-                                  key={i}
-                                  align="center"
-                                  width="33%"
-                                  style={{
-                                    fontFamily: FONT,
-                                    fontSize: 12,
-                                    fontWeight: 700,
-                                    letterSpacing: 0.5,
-                                    textTransform: "uppercase",
-                                    color: C.green,
-                                    padding: "0 6px",
-                                    // The divider sits between cells in either direction.
-                                    [dir === "rtl" ? "borderRight" : "borderLeft"]:
-                                      i > 0 ? `1px solid ${C.line}` : undefined,
-                                  }}
+                              <td style={{ padding: "18px 12px 22px" }}>
+                                <table
+                                  role="presentation"
+                                  width="100%"
+                                  cellPadding={0}
+                                  cellSpacing={0}
                                 >
-                                  <span style={{ fontSize: 26 }}>{icon}</span>
-                                  <br />
-                                  {label}
-                                </td>
-                              ))}
+                                  <tbody>
+                                    <tr>
+                                      {(
+                                        [
+                                          ["leaf", "🌿", t.featFresh],
+                                          ["bowl", "🍲", t.featAuthentic],
+                                          ["heart", "💚", t.featHospitality],
+                                        ] as const
+                                      ).map(([name, fallback, label], i) => (
+                                        <td
+                                          key={name}
+                                          align="center"
+                                          width="33%"
+                                          valign="top"
+                                          style={{
+                                            fontFamily: FONT,
+                                            fontSize: 12,
+                                            lineHeight: "16px",
+                                            fontWeight: 700,
+                                            letterSpacing: 0.5,
+                                            textTransform: "uppercase",
+                                            color: C.accent,
+                                            padding: "0 6px",
+                                            // The divider sits between cells in either direction.
+                                            [dir === "rtl" ? "borderRight" : "borderLeft"]:
+                                              i > 0 ? `1px solid ${C.line}` : undefined,
+                                          }}
+                                        >
+                                          {siteBase ? (
+                                            <img
+                                              src={img(name)}
+                                              height={36}
+                                              alt=""
+                                              style={{
+                                                display: "block",
+                                                height: 36,
+                                                width: "auto",
+                                                border: 0,
+                                                margin: "0 auto 8px",
+                                              }}
+                                            />
+                                          ) : (
+                                            <span style={{ fontSize: 26 }}>
+                                              {fallback}
+                                              <br />
+                                            </span>
+                                          )}
+                                          {label}
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </td>
                             </tr>
-                          </tbody>
-                        </table>
-                      </td>
-                    </tr>
 
-                    {/* 7 · Footer: where to find us. */}
-                    <tr>
-                      <td
-                        style={{
-                          backgroundColor: C.greenDark,
-                          borderTop: `6px solid ${C.lime}`,
-                          padding: "18px 16px 20px",
-                        }}
-                      >
-                        <table role="presentation" width="100%" cellPadding={0} cellSpacing={0}>
-                          <tbody>
-                            <tr>
-                              {footer.address ? (
-                                <td
-                                  style={{
-                                    fontFamily: FONT,
-                                    fontSize: 13,
-                                    color: "#ffffff",
-                                    padding: "4px 6px",
-                                    verticalAlign: "top",
-                                  }}
-                                >
-                                  📍{" "}
-                                  {footer.address.split("\n").map((l, i) => (
-                                    <span key={i}>
-                                      {i > 0 ? <br /> : null}
-                                      {l}
-                                    </span>
-                                  ))}
-                                </td>
-                              ) : null}
-                              {footer.phone && footer.phoneHref ? (
-                                <td
-                                  style={{
-                                    fontFamily: FONT,
-                                    fontSize: 13,
-                                    padding: "4px 6px",
-                                    verticalAlign: "top",
-                                  }}
-                                >
-                                  📞{" "}
-                                  <a
-                                    href={footer.phoneHref}
-                                    dir="ltr"
-                                    style={{
-                                      color: "#ffffff",
-                                      textDecoration: "none",
-                                      unicodeBidi: "embed",
-                                    }}
-                                  >
-                                    {footer.phone}
-                                  </a>
-                                </td>
-                              ) : null}
-                              {site ? (
-                                <td
-                                  style={{
-                                    fontFamily: FONT,
-                                    fontSize: 13,
-                                    padding: "4px 6px",
-                                    verticalAlign: "top",
-                                  }}
-                                >
-                                  🌐{" "}
-                                  <a
-                                    href={siteBase}
-                                    style={{ color: "#ffffff", textDecoration: "none" }}
-                                  >
-                                    {site}
-                                  </a>
-                                </td>
-                              ) : null}
-                            </tr>
+                            {/* Where to find us. */}
+                            <FooterBand
+                              siteBase={siteBase}
+                              dir={dir}
+                              tagline={t.tagline}
+                              contact={order.venueFooter ?? null}
+                              note={`${t.notInvoice} · ${order.venue.name}`}
+                            />
                           </tbody>
                         </table>
-                        <p
-                          style={{
-                            fontFamily: "Georgia, 'Times New Roman', serif",
-                            fontStyle: "italic",
-                            fontSize: 20,
-                            color: "#ffffff",
-                            textAlign: "center",
-                            margin: "16px 0 4px",
-                          }}
-                        >
-                          {t.tagline} ♡
-                        </p>
-                        <p
-                          style={{
-                            fontFamily: FONT,
-                            fontSize: 11,
-                            color: "#b9c9b9",
-                            textAlign: "center",
-                            margin: 0,
-                          }}
-                        >
-                          {t.notInvoice} · {order.venue.name}
-                        </p>
                       </td>
                     </tr>
                   </tbody>

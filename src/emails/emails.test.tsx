@@ -32,7 +32,7 @@ describe("EmailShell — the green frame every notification shares", () => {
     expect(html).not.toContain(BANNER);
     expect(html).not.toContain("background-image");
     expect(html).not.toContain("#123456");
-    expect(html).toContain("background-color:#f3f5ef");
+    expect(html).toContain("background-color:#fefaf4");
   });
 
   it("keeps each email's own content inside the frame", () => {

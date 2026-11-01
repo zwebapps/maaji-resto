@@ -3,53 +3,78 @@
 import type { CSSProperties, ReactNode } from "react";
 import { siteUrl } from "@/lib/site-url";
 import { uploadedImageUrl } from "@/lib/menu-images";
+import { receiptCopy } from "@/lib/i18n/emails";
+import { uiLocale } from "@/lib/locales";
 
 /**
- * One frame for every email the app sends except the order confirmation,
- * which draws the same frame itself (`receipt-email.tsx`): the owner asked
- * for ONE look across all notifications (2026-09-30) — the green design of
- * the confirmation. A white rounded card on a pale-green page, the brand
- * header image on top, the email's own content below, a quiet footer.
+ * One frame for every email the app sends: the owner's design (2026-11-01,
+ * docs: the order-confirmation mockup) on a warm cream page — the cream
+ * banner on top (mother at the pot, "Maaji" lettering, halal seal, gold
+ * rule), the email's own content in a pale card, and a dark-green footer
+ * band with mandala corners, the tagline and a gold ornament. The order
+ * confirmation (`receipt-email.tsx`) is built from the same pieces —
+ * `EmailHeader`, `FooterBand` — plus its own "thank you" and order cards.
  *
- * The header is ONE image (`/brand/email-header.png`, the mascot + chunky
- * lettering + halal mark) because custom fonts don't survive Gmail/Outlook;
- * its alt text is the venue name, so an image-blocking client still says
- * who wrote. Table layout + inline styles only.
+ * Lettering and ornaments are IMAGES (`/brand/email-header.png`,
+ * `/brand/email/*.png`, cut from the mockup) because custom fonts don't
+ * survive Gmail/Outlook; every image has alt text or is decorative, and
+ * everything a guest must read — order, prices, address, phone — is live
+ * text. Table layout + inline styles only; the one <style> block only
+ * hides ornaments and stacks columns on phones.
  *
- * Only the FRAME is shared. Each email keeps its own message — the "Thank
- * you, your order has been received" card belongs to the confirmation
- * alone.
+ * Only the FRAME is shared. Each email keeps its own message.
  */
 
 export const EMAIL = {
-  /** Buttons, headings' accents, amounts — the confirmation's green. */
-  accent: "#1e5b2c",
-  accentDark: "#0f3d1f",
+  /** Buttons, headings, amounts — the mockup's deep green. */
+  accent: "#0d4a2c",
+  accentDark: "#073b23",
   /** Border of highlighted boxes (vouchers, gift cards). */
-  gold: "#b9d88a",
-  /** Background of highlighted boxes ("delivering to", codes). */
-  cream: "#eaf4e2",
-  card: "#ffffff",
-  ink: "#1f2a1f",
-  inkSoft: "#5f6b5f",
-  line: "#e3e8de",
-  positive: "#1e5b2c",
-  positiveBg: "#e3f2e1",
-  warnBg: "#fde8e8",
+  gold: "#e2c79a",
+  /** Background of highlighted boxes ("delivering to", codes, payment note). */
+  cream: "#fbf0db",
+  card: "#fdfbf8",
+  ink: "#1d3b2a",
+  inkSoft: "#5e6f62",
+  line: "#e6e2d8",
+  positive: "#0d4a2c",
+  positiveBg: "#e7efe0",
+  warnBg: "#fbf0db",
+  /** The page behind everything. */
+  page: "#fefaf4",
+  /** The "thank you" card. */
+  soft: "#edf2e4",
+  /** Table header band ("Item / Price"). */
+  band: "#f7eedf",
+  /** The total row. */
+  total: "#eaeedf",
+  /** Text on the cream payment note. */
+  brown: "#6b4513",
+  /** Text on the dark-green footer band. */
+  footerInk: "#f3e4bf",
 } as const;
 
-/** The page behind the card. */
-const PAGE = "#f3f5ef";
 const FONT = "Arial, 'Helvetica Neue', Helvetica, sans-serif";
 const SANS = FONT;
+export const EMAIL_FONT = FONT;
+export const EMAIL_SERIF = "Georgia, 'Times New Roman', serif";
+
+/** Phone-width tweaks. Clients that drop <style> just keep the desktop
+ *  layout, which still fits: ornaments are small and columns wrap. */
+export const EMAIL_CSS = `@media (max-width:520px){.m-hide{display:none!important}.m-stack{display:block!important;width:100%!important;border:0!important;padding:6px 4px!important}}`;
+
+/** Absolute URL of one cut-out from the mockup (`/public/brand/email`). */
+export function emailAsset(siteBase: string, name: string): string {
+  return `${siteBase}/brand/email/${name}.png`;
+}
 
 export interface Brand {
   name: string;
-  /** Absolute URL of a square logo, or null. Kept for callers; the green
-   *  frame's header is the brand image instead. */
+  /** Absolute URL of a square logo, or null. Kept for callers; the frame's
+   *  header is the brand image instead. */
   logoUrl: string | null;
-  /** Absolute URL of a wide banner photo, or null. Kept for callers; no
-   *  longer drawn (owner, 2026-09-30: one green look everywhere). */
+  /** Absolute URL of a wide banner photo, or null. Kept for callers; never
+   *  drawn (owner, 2026-09-30: one look everywhere). */
   bannerUrl: string | null;
   accent?: string | null;
 }
@@ -76,6 +101,263 @@ export function platformBrand(name: string): Brand {
   return { name, logoUrl: `${siteUrl()}/brand/logo-192.png`, bannerUrl: null, accent: null };
 }
 
+/** The cream banner. Without a site origin (fixtures) the name as text. */
+export function EmailHeader({
+  siteBase,
+  name,
+}: {
+  siteBase: string;
+  name: string;
+}): React.ReactElement {
+  return (
+    <tr>
+      <td align="center" style={{ padding: "0 0 14px" }}>
+        {siteBase ? (
+          <img
+            src={`${siteBase}/brand/email-header.png`}
+            width={600}
+            alt={name}
+            style={{
+              display: "block",
+              width: "100%",
+              maxWidth: 600,
+              height: "auto",
+              border: 0,
+              color: EMAIL.accent,
+              fontFamily: EMAIL_SERIF,
+              fontSize: 28,
+              fontWeight: 700,
+            }}
+          />
+        ) : (
+          <p
+            style={{
+              fontFamily: EMAIL_SERIF,
+              fontSize: 28,
+              fontWeight: 700,
+              color: EMAIL.accent,
+              margin: 0,
+            }}
+          >
+            {name}
+          </p>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+export interface FooterContact {
+  address: string | null;
+  phone: string | null;
+  phoneHref: string | null;
+}
+
+/**
+ * The dark-green band that closes a card: address · phone · website, the
+ * tagline in serif italics, a gold ornament, optional small print. Mandala
+ * corners frame it on wide screens. A row of the card's own table, so it
+ * shares the card's rounded bottom corners.
+ */
+export function FooterBand({
+  siteBase,
+  dir,
+  tagline,
+  contact,
+  note,
+}: {
+  siteBase: string;
+  dir: "ltr" | "rtl";
+  tagline: string;
+  contact?: FooterContact | null;
+  note?: ReactNode;
+}): React.ReactElement {
+  const site = siteBase.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const cells: { icon: string; body: ReactNode }[] = [];
+  if (contact?.address) {
+    cells.push({
+      icon: "pin",
+      body: contact.address.split("\n").map((l, i) => (
+        <span key={i}>
+          {i > 0 ? <br /> : null}
+          {l}
+        </span>
+      )),
+    });
+  }
+  if (contact?.phone && contact.phoneHref) {
+    cells.push({
+      icon: "phone",
+      body: (
+        <a
+          href={contact.phoneHref}
+          dir="ltr"
+          style={{ color: "#ffffff", textDecoration: "none", unicodeBidi: "embed" }}
+        >
+          {contact.phone}
+        </a>
+      ),
+    });
+  }
+  if (site) {
+    cells.push({
+      icon: "globe",
+      body: (
+        <a href={siteBase} style={{ color: "#ffffff", textDecoration: "none" }}>
+          {site}
+        </a>
+      ),
+    });
+  }
+  // The corner ornaments are drawn for the left/right edge: in Arabic the
+  // table flips, so the images swap with it.
+  const [mStart, mEnd] =
+    dir === "rtl" ? ["mandala-end", "mandala-start"] : ["mandala-start", "mandala-end"];
+  const ornament = (name: string, align: "left" | "right"): React.ReactElement => (
+    <td
+      className="m-hide"
+      width={44}
+      valign="top"
+      align={align}
+      style={{ width: 44, padding: 0, lineHeight: 0 }}
+    >
+      {siteBase ? (
+        <img
+          src={emailAsset(siteBase, name)}
+          width={44}
+          alt=""
+          style={{ display: "block", width: 44, height: "auto", border: 0 }}
+        />
+      ) : null}
+    </td>
+  );
+  return (
+    <tr>
+      <td style={{ backgroundColor: EMAIL.accentDark, padding: 0, borderRadius: "0 0 14px 14px" }}>
+        <table role="presentation" width="100%" cellPadding={0} cellSpacing={0}>
+          <tbody>
+            <tr>
+              {ornament(mStart, dir === "rtl" ? "right" : "left")}
+              <td align="center" style={{ padding: "16px 0 16px" }}>
+                {cells.length > 0 ? (
+                  <table
+                    role="presentation"
+                    cellPadding={0}
+                    cellSpacing={0}
+                    style={{ margin: "0 auto" }}
+                  >
+                    <tbody>
+                      <tr>
+                        {cells.map((c, i) => (
+                          <td
+                            key={c.icon}
+                            className="m-stack"
+                            valign="top"
+                            style={{
+                              padding: "2px 9px",
+                              fontFamily: FONT,
+                              fontSize: 12,
+                              lineHeight: "18px",
+                              color: "#ffffff",
+                              [dir === "rtl" ? "borderRight" : "borderLeft"]:
+                                i > 0 ? "1px solid #3f6650" : undefined,
+                            }}
+                          >
+                            <table role="presentation" cellPadding={0} cellSpacing={0}>
+                              <tbody>
+                                <tr>
+                                  <td
+                                    valign="top"
+                                    style={{
+                                      padding: dir === "rtl" ? "0 0 0 6px" : "0 6px 0 0",
+                                      lineHeight: 0,
+                                    }}
+                                  >
+                                    {siteBase ? (
+                                      <img
+                                        src={emailAsset(siteBase, c.icon)}
+                                        width={16}
+                                        alt=""
+                                        style={{
+                                          display: "block",
+                                          width: 16,
+                                          height: "auto",
+                                          border: 0,
+                                        }}
+                                      />
+                                    ) : null}
+                                  </td>
+                                  <td
+                                    valign="top"
+                                    style={{
+                                      fontFamily: FONT,
+                                      fontSize: 12,
+                                      lineHeight: "17px",
+                                      color: "#ffffff",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {c.body}
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                ) : null}
+                <p
+                  style={{
+                    fontFamily: EMAIL_SERIF,
+                    fontStyle: "italic",
+                    fontSize: 20,
+                    lineHeight: "26px",
+                    color: EMAIL.footerInk,
+                    textAlign: "center",
+                    margin: cells.length > 0 ? "14px 0 4px" : "4px 0 4px",
+                  }}
+                >
+                  {tagline}.
+                </p>
+                {siteBase ? (
+                  <img
+                    src={emailAsset(siteBase, "divider")}
+                    width={186}
+                    alt=""
+                    style={{
+                      display: "block",
+                      width: 186,
+                      height: "auto",
+                      border: 0,
+                      margin: "0 auto",
+                    }}
+                  />
+                ) : null}
+                {note ? (
+                  <p
+                    style={{
+                      fontFamily: FONT,
+                      fontSize: 11,
+                      color: "#a9bfae",
+                      textAlign: "center",
+                      margin: "8px 0 0",
+                    }}
+                  >
+                    {note}
+                  </p>
+                ) : null}
+              </td>
+              {ornament(mEnd, dir === "rtl" ? "left" : "right")}
+            </tr>
+          </tbody>
+        </table>
+      </td>
+    </tr>
+  );
+}
+
 export function EmailShell({
   lang,
   dir,
@@ -92,7 +374,7 @@ export function EmailShell({
   children: ReactNode;
   footer?: ReactNode;
 }): React.ReactElement {
-  const headerUrl = `${siteUrl()}/brand/email-header.png`;
+  const siteBase = siteUrl();
   return (
     <html lang={lang} dir={dir}>
       <head>
@@ -100,15 +382,16 @@ export function EmailShell({
         <meta name="viewport" content="width=device-width" />
         <meta name="color-scheme" content="light" />
         <title>{title}</title>
+        <style>{EMAIL_CSS}</style>
       </head>
-      <body style={{ margin: 0, padding: 0, backgroundColor: PAGE, fontFamily: FONT }}>
+      <body style={{ margin: 0, padding: 0, backgroundColor: EMAIL.page, fontFamily: FONT }}>
         <div style={{ display: "none", maxHeight: 0, overflow: "hidden", opacity: 0 }}>{title}</div>
         <table
           role="presentation"
           width="100%"
           cellPadding={0}
           cellSpacing={0}
-          style={{ backgroundColor: PAGE }}
+          style={{ backgroundColor: EMAIL.page }}
         >
           <tbody>
             <tr>
@@ -119,74 +402,64 @@ export function EmailShell({
                   cellPadding={0}
                   cellSpacing={0}
                   dir={dir}
-                  style={{
-                    width: "100%",
-                    maxWidth: 600,
-                    backgroundColor: EMAIL.card,
-                    borderRadius: 18,
-                    overflow: "hidden",
-                  }}
-                >
-                  <tbody>
-                    {/* Brand header — the same image the confirmation opens with. */}
-                    <tr>
-                      <td align="center" style={{ padding: "18px 16px 6px" }}>
-                        <img
-                          src={headerUrl}
-                          width={560}
-                          alt={brand.name}
-                          style={{
-                            display: "block",
-                            width: "100%",
-                            maxWidth: 560,
-                            height: "auto",
-                            border: 0,
-                            color: EMAIL.accent,
-                            fontFamily: FONT,
-                            fontSize: 22,
-                            fontWeight: 700,
-                          }}
-                        />
-                      </td>
-                    </tr>
-                    {/* The email's own content. */}
-                    <tr>
-                      <td
-                        style={{
-                          padding: "18px 28px 26px",
-                          color: EMAIL.ink,
-                          fontSize: 15,
-                          lineHeight: 1.55,
-                          fontFamily: FONT,
-                        }}
-                      >
-                        {children}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                <table
-                  role="presentation"
-                  width="600"
-                  cellPadding={0}
-                  cellSpacing={0}
                   style={{ width: "100%", maxWidth: 600 }}
                 >
                   <tbody>
+                    <EmailHeader siteBase={siteBase} name={brand.name} />
                     <tr>
-                      <td
-                        align="center"
-                        style={{
-                          padding: "16px 12px 0",
-                          color: EMAIL.inkSoft,
-                          fontSize: 12,
-                          lineHeight: 1.5,
-                          fontFamily: SANS,
-                        }}
-                      >
-                        {footer}
+                      <td style={{ padding: "0 16px" }}>
+                        <table
+                          role="presentation"
+                          width="100%"
+                          cellPadding={0}
+                          cellSpacing={0}
+                          style={{
+                            backgroundColor: EMAIL.card,
+                            border: `1px solid ${EMAIL.line}`,
+                            borderRadius: 14,
+                            borderCollapse: "separate",
+                          }}
+                        >
+                          <tbody>
+                            {/* The email's own content. */}
+                            <tr>
+                              <td
+                                style={{
+                                  padding: "22px 26px 24px",
+                                  color: EMAIL.ink,
+                                  fontSize: 15,
+                                  lineHeight: 1.55,
+                                  fontFamily: FONT,
+                                }}
+                              >
+                                {children}
+                              </td>
+                            </tr>
+                            <FooterBand
+                              siteBase={siteBase}
+                              dir={dir}
+                              tagline={receiptCopy(uiLocale(lang)).tagline}
+                            />
+                          </tbody>
+                        </table>
                       </td>
                     </tr>
+                    {footer ? (
+                      <tr>
+                        <td
+                          align="center"
+                          style={{
+                            padding: "14px 12px 0",
+                            color: EMAIL.inkSoft,
+                            fontSize: 12,
+                            lineHeight: 1.5,
+                            fontFamily: SANS,
+                          }}
+                        >
+                          {footer}
+                        </td>
+                      </tr>
+                    ) : null}
                   </tbody>
                 </table>
               </td>
