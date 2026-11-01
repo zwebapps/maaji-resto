@@ -312,6 +312,7 @@ model Venue {
   deletedOrders    DeletedOrder[]
   orderEvents      OrderEvent[]
   paymentAttempts  PaymentAttempt[]
+  orderEmailCodes  OrderEmailCode[]
   orderIssues      OrderIssue[]
   giftCardProducts GiftCardProduct[]
   giftCardsSold    GiftCard[]
@@ -664,6 +665,15 @@ model Order {
   etaMinutes Int?      @map("eta_minutes")
   /// When an online order was settled, i.e. reached the board.
   paidAt     DateTime? @map("paid_at")
+
+  /// A cash pickup / delivery order whose guest proved their email with a
+  /// code at checkout, and which staff must still confirm by phone before
+  /// it counts (owner, 2026-11-01). It shows on the lists highlighted with
+  /// Accept / Reject, and reaches the board — prints, counts, carries a
+  /// promised time — only from `confirmedAt`. See `src/lib/order-eta.ts`.
+  needsConfirmation Boolean   @default(false) @map("needs_confirmation")
+  /// When staff accepted it after the call. NULL while pending.
+  confirmedAt       DateTime? @map("confirmed_at")
 
   /// When the guest followed the "Rate us on Google" link for this order.
   /// A TAP, not a review — Google never tells us whether one was written —
@@ -1363,4 +1373,27 @@ model StaffDevice {
   @@index([tenantId, disabledAt])
   @@index([userId])
   @@map("staff_devices")
+}
+
+/// A 6-digit code mailed to a guest at checkout to prove the email on a
+/// cash order (owner, 2026-11-01). Only the hash is kept; a row lives ten
+/// minutes, allows five tries, and is deleted once used. Proving the code
+/// yields a short-lived signed token the order then carries — see
+/// `src/lib/order-email-code.ts`.
+model OrderEmailCode {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  venueId   String   @map("venue_id")
+  email     String   @db.Citext
+  codeHash  String   @map("code_hash")
+  attempts  Int      @default(0)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@index([venueId, email])
+  @@index([expiresAt])
+  @@map("order_email_codes")
 }

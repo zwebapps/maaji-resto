@@ -1,3 +1,4 @@
+import { awaitingConfirmation } from "./order-status";
 import {
   clampAcceptSeconds,
   clampEtaMinutes,
@@ -31,6 +32,9 @@ export interface EtaOrder {
   createdAt: Date;
   paidAt: Date | null;
   etaMinutes: number | null;
+  /** Cash order staff confirm by phone first; absent on older callers. */
+  needsConfirmation?: boolean;
+  confirmedAt?: Date | null;
 }
 
 /** The venue's settings for this (Dashboard → Settings → Ordering). */
@@ -72,9 +76,12 @@ export function defaultEtaMinutes(orderType: string, defaults?: Partial<EtaDefau
     : clampEtaMinutes(defaults?.etaPickupMinutes, DEFAULT_ETA_PICKUP_MINUTES);
 }
 
-/** When the order reached the board — an online order when it was paid. */
-export function boardedAt(order: Pick<EtaOrder, "createdAt" | "paidAt">): Date {
-  return order.paidAt ?? order.createdAt;
+/** When the order reached the board — an online order when it was paid,
+ *  a phone-confirmed cash order when staff confirmed it. */
+export function boardedAt(
+  order: Pick<EtaOrder, "createdAt" | "paidAt"> & { confirmedAt?: Date | null },
+): Date {
+  return order.confirmedAt ?? order.paidAt ?? order.createdAt;
 }
 
 /**
@@ -88,6 +95,9 @@ export function orderEta(
   now: Date = new Date(),
 ): OrderEta | null {
   if (!etaApplies(order)) return null;
+  // Still waiting for its confirmation call: not on the board yet, so no
+  // window is running — staff set the time when they accept.
+  if (awaitingConfirmation(order)) return null;
   const from = boardedAt(order);
   const accepted = order.etaMinutes !== null;
   const minutes = order.etaMinutes ?? defaultEtaMinutes(order.orderType, defaults);

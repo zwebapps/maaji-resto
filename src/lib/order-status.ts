@@ -47,6 +47,24 @@ export function isOrderStatus(value: string): value is OrderStatus {
   return (ORDER_STATUSES as readonly string[]).includes(value);
 }
 
+/**
+ * A cash pickup / delivery order still waiting for staff to confirm it by
+ * phone (owner, 2026-11-01). It is listed — highlighted, with Accept and
+ * Reject — but does not print, count as kitchen work or carry a promised
+ * time until confirmed. A cancelled one is simply cancelled.
+ */
+export function awaitingConfirmation(order: {
+  needsConfirmation?: boolean | null;
+  confirmedAt?: Date | string | null;
+  status: string;
+}): boolean {
+  return (
+    Boolean(order.needsConfirmation) &&
+    !order.confirmedAt &&
+    !TERMINAL_STATUSES.includes(order.status as OrderStatus)
+  );
+}
+
 /** The order was called off. Terminal, and off the guest's step rail. */
 export function isCancelledStatus(status: string): boolean {
   return status === "cancelled";

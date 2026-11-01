@@ -1614,6 +1614,27 @@ export default async function SettingsPage({
           </fieldset>
 
           <fieldset className="mt-4 border-t border-ink/10 pt-4">
+            <legend className="float-left w-full text-sm font-medium">Confirm cash orders</legend>
+            <p className="clear-both pt-1 text-xs text-muted">
+              Guests paying cash for pickup or delivery must confirm their email with a 6-digit code
+              before they can order. The order then arrives highlighted as{" "}
+              <strong>waiting for confirmation</strong>: call the guest, then accept it (with the
+              usual − / + time) or reject it — a rejected guest gets an email. Nothing prints until
+              you accept. Dine-in orders and orders paid online are not affected. Switch this off if
+              email delivery ever stops working, or guests cannot get their code.
+            </p>
+            <label className="mt-3 flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="verifyCash"
+                defaultChecked={ordering.config.verifyCash}
+                className="accent-orange"
+              />
+              <span>Require an email code and a confirmation call for cash orders</span>
+            </label>
+          </fieldset>
+
+          <fieldset className="mt-4 border-t border-ink/10 pt-4">
             <legend className="float-left w-full text-sm font-medium">
               Expected time for new orders
             </legend>

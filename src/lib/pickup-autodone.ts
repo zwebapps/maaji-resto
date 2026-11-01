@@ -1,6 +1,7 @@
 import { asTenant } from "./tenant";
 import { recordOrderEventTx } from "./order-events";
 import { orderEta } from "./order-eta";
+import { awaitingConfirmation } from "./order-status";
 import { parseOrderingConfig } from "./ordering-config";
 import { createLogger } from "./logger";
 
@@ -83,13 +84,16 @@ export async function autoCompletePickups(tenantId: string, now = new Date()): P
         createdAt: true,
         paidAt: true,
         etaMinutes: true,
+        needsConfirmation: true,
+        confirmedAt: true,
         venue: { select: { ordering: true } },
       },
     });
     const closed: { id: string; paymentStatus: string }[] = [];
     for (const o of orders) {
       const config = parseOrderingConfig(o.venue.ordering);
-      if (!isPickupDue(o, config, now)) continue;
+      // Never confirmed by phone: nobody promised this guest anything.
+      if (awaitingConfirmation(o) || !isPickupDue(o, config, now)) continue;
       const updated = await tx.order.updateMany({
         where: { id: o.id, status: o.status },
         data: { status: "done" },

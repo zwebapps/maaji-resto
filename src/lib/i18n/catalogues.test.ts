@@ -9,6 +9,8 @@ import {
   NEW_ISSUE_COPY,
   NEW_ORDER_COPY,
   ON_THE_WAY_COPY,
+  ORDER_CODE_COPY,
+  ORDER_REJECTED_COPY,
   RECEIPT_COPY,
   REWARD_COPY,
   newOrderCopy,
@@ -85,6 +87,8 @@ const NAMESPACES = {
   // — it lands mid-order, when a guest is least willing to decode a
   // language they didn't pick.
   onTheWayEmail: ON_THE_WAY_COPY,
+  orderCodeEmail: ORDER_CODE_COPY,
+  orderRejectedEmail: ORDER_REJECTED_COPY,
   pdf: PDF_COPY,
 } as const;
 

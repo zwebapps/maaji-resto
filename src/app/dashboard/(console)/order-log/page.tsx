@@ -67,6 +67,8 @@ const KIND: Record<string, { label: string; tone: "ok" | "warn" | "bad" | "plain
   "paypal.webhook": { label: "PayPal message", tone: "plain" },
   "paypal.capture": { label: "PayPal capture", tone: "plain" },
   "order.accepted": { label: "Accepted", tone: "ok" },
+  "order.confirmed": { label: "Confirmed by phone", tone: "ok" },
+  "order.rejected": { label: "Rejected after call", tone: "bad" },
   "order.status": { label: "Status changed", tone: "plain" },
   "order.cancelled": { label: "Cancelled", tone: "bad" },
   "order.dispatched": { label: "Out for delivery", tone: "ok" },

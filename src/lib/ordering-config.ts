@@ -238,6 +238,12 @@ export const orderingConfigSchema = z.object({
   // order API all read it from EffectiveOrdering.
   cashTakeaway: cashSwitchField.default(true),
   cashDelivery: cashSwitchField.default(true),
+  // Cash pickup / delivery orders need a verified email (a mailed code at
+  // checkout) and a staff phone call before they count (owner,
+  // 2026-11-01). Off until the owner switches it on (Dashboard → Settings
+  // → Ordering): apps released before the code step cannot send one, and
+  // it is also the way out when email is down.
+  verifyCash: z.boolean().default(false),
   // Shown in the public menu footer. Per-item sanitised (one unknown
   // value never nukes the list): legacy "credit" expands to
   // Visa + Mastercard, junk is dropped, absent → German-typical default.
@@ -318,6 +324,9 @@ export interface EffectiveOrdering {
   /** Cash accepted for pickup / delivery; absent = yes (older callers). */
   cashTakeaway?: boolean;
   cashDelivery?: boolean;
+  /** Cash pickup / delivery needs the email code + a staff call; absent =
+   *  no (older callers never ask for a code). */
+  verifyCash?: boolean;
 }
 
 /** Effective capability = plan/override entitlement AND owner switch. */
@@ -337,6 +346,7 @@ export function effectiveOrdering(
     orderDiscountPercent: config.orderDiscountPercent,
     cashTakeaway: config.cashTakeaway,
     cashDelivery: config.cashDelivery,
+    verifyCash: config.verifyCash,
   };
 }
 

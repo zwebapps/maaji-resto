@@ -280,6 +280,8 @@ export async function saveOrderingAction(form: FormData): Promise<void> {
     // Cash at pickup / to the driver; unticked = card or PayPal only.
     cashTakeaway: form.get("cashTakeaway") === "on",
     cashDelivery: form.get("cashDelivery") === "on",
+    // Email code at checkout + a confirmation call for cash pickup/delivery.
+    verifyCash: form.get("verifyCash") === "on",
     // The promised time for an ASAP order and how long the restaurant has
     // to change it; the schema snaps each to its range, blank → default.
     etaDeliveryMinutes: parseInt(String(form.get("etaDeliveryMinutes") ?? ""), 10),

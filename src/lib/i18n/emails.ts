@@ -1126,3 +1126,158 @@ export const ON_THE_WAY_COPY: Record<UiLocale, OnTheWayCopy> = {
 
 export const onTheWayCopy = (locale?: string | null): OnTheWayCopy =>
   ON_THE_WAY_COPY[uiLocale(locale)];
+
+/* ------------------------------------------------------------------ */
+/* Cash-order email code (owner, 2026-11-01)                           */
+/* ------------------------------------------------------------------ */
+
+export interface OrderCodeCopy {
+  subject: (code: string, venue: string) => string;
+  eyebrow: string;
+  heading: string;
+  lead: string;
+  validFor: string;
+  notYou: string;
+}
+
+const orderCodeEn: OrderCodeCopy = {
+  subject: (code, venue) => `${code} is your order code for ${venue}`,
+  eyebrow: "Confirm your email",
+  heading: "Your order code",
+  lead: "Enter this code at checkout to confirm your email address:",
+  validFor: "The code is valid for 10 minutes.",
+  notYou: "Didn't order with us? Then just ignore this email — nothing will happen.",
+};
+const orderCodeDe: OrderCodeCopy = {
+  subject: (code, venue) => `${code} ist Ihr Bestellcode für ${venue}`,
+  eyebrow: "E-Mail bestätigen",
+  heading: "Ihr Bestellcode",
+  lead: "Geben Sie diesen Code beim Bestellen ein, um Ihre E-Mail-Adresse zu bestätigen:",
+  validFor: "Der Code ist 10 Minuten gültig.",
+  notYou: "Sie haben nicht bei uns bestellt? Dann ignorieren Sie diese E-Mail einfach.",
+};
+const orderCodeFr: OrderCodeCopy = {
+  subject: (code, venue) => `${code} est votre code de commande pour ${venue}`,
+  eyebrow: "Confirmez votre e-mail",
+  heading: "Votre code de commande",
+  lead: "Saisissez ce code lors de la commande pour confirmer votre adresse e-mail :",
+  validFor: "Le code est valable 10 minutes.",
+  notYou: "Vous n'avez pas commandé chez nous ? Ignorez simplement cet e-mail.",
+};
+const orderCodeEs: OrderCodeCopy = {
+  subject: (code, venue) => `${code} es tu código de pedido para ${venue}`,
+  eyebrow: "Confirma tu correo",
+  heading: "Tu código de pedido",
+  lead: "Introduce este código al hacer el pedido para confirmar tu correo electrónico:",
+  validFor: "El código es válido durante 10 minutos.",
+  notYou: "¿No has pedido con nosotros? Simplemente ignora este correo.",
+};
+const orderCodeIt: OrderCodeCopy = {
+  subject: (code, venue) => `${code} è il tuo codice d'ordine per ${venue}`,
+  eyebrow: "Conferma la tua email",
+  heading: "Il tuo codice d'ordine",
+  lead: "Inserisci questo codice durante l'ordine per confermare il tuo indirizzo email:",
+  validFor: "Il codice è valido per 10 minuti.",
+  notYou: "Non hai ordinato da noi? Ignora semplicemente questa email.",
+};
+const orderCodeAr: OrderCodeCopy = {
+  subject: (code, venue) => `${code} هو رمز طلبك من ${venue}`,
+  eyebrow: "تأكيد بريدك الإلكتروني",
+  heading: "رمز طلبك",
+  lead: "أدخل هذا الرمز عند الطلب لتأكيد بريدك الإلكتروني:",
+  validFor: "الرمز صالح لمدة 10 دقائق.",
+  notYou: "لم تطلب منّا؟ تجاهل هذه الرسالة ببساطة.",
+};
+
+export const ORDER_CODE_COPY: Record<UiLocale, OrderCodeCopy> = {
+  en: orderCodeEn,
+  de: orderCodeDe,
+  fr: orderCodeFr,
+  es: orderCodeEs,
+  it: orderCodeIt,
+  ar: orderCodeAr,
+};
+
+export const orderCodeCopy = (locale?: string | null): OrderCodeCopy =>
+  ORDER_CODE_COPY[uiLocale(locale)];
+
+/* ------------------------------------------------------------------ */
+/* Cash order rejected after the confirmation call                     */
+/* ------------------------------------------------------------------ */
+
+export interface OrderRejectedCopy {
+  subject: (orderNumber: string, venue: string) => string;
+  eyebrow: string;
+  heading: string;
+  lead: (orderNumber: string) => string;
+  why: string;
+  callUs: string;
+  footer: string;
+}
+
+const orderRejectedEn: OrderRejectedCopy = {
+  subject: (n, venue) => `Your order no. ${n} at ${venue} could not be accepted`,
+  eyebrow: "Order not accepted",
+  heading: "We're sorry",
+  lead: (n) => `Unfortunately we could not accept your order no. ${n}.`,
+  why: "We confirm every cash order by phone and could not confirm this one. Nothing has been charged.",
+  callUs: "Questions? Just give us a call.",
+  footer: "You are receiving this email because you placed an order with us.",
+};
+const orderRejectedDe: OrderRejectedCopy = {
+  subject: (n, venue) => `Ihre Bestellung Nr. ${n} bei ${venue} konnte nicht angenommen werden`,
+  eyebrow: "Bestellung nicht angenommen",
+  heading: "Es tut uns leid",
+  lead: (n) => `Leider konnten wir Ihre Bestellung Nr. ${n} nicht annehmen.`,
+  why: "Wir bestätigen jede Barzahlungs-Bestellung telefonisch und konnten diese nicht bestätigen. Es wurde nichts berechnet.",
+  callUs: "Fragen? Rufen Sie uns einfach an.",
+  footer: "Sie erhalten diese E-Mail, weil Sie bei uns bestellt haben.",
+};
+const orderRejectedFr: OrderRejectedCopy = {
+  subject: (n, venue) => `Votre commande n° ${n} chez ${venue} n'a pas pu être acceptée`,
+  eyebrow: "Commande non acceptée",
+  heading: "Nous sommes désolés",
+  lead: (n) => `Malheureusement, nous n'avons pas pu accepter votre commande n° ${n}.`,
+  why: "Nous confirmons chaque commande payée en espèces par téléphone et n'avons pas pu confirmer celle-ci. Rien ne vous a été facturé.",
+  callUs: "Des questions ? Appelez-nous.",
+  footer: "Vous recevez cet e-mail parce que vous avez passé une commande chez nous.",
+};
+const orderRejectedEs: OrderRejectedCopy = {
+  subject: (n, venue) => `Tu pedido n.º ${n} en ${venue} no pudo ser aceptado`,
+  eyebrow: "Pedido no aceptado",
+  heading: "Lo sentimos",
+  lead: (n) => `Lamentablemente no pudimos aceptar tu pedido n.º ${n}.`,
+  why: "Confirmamos cada pedido en efectivo por teléfono y no pudimos confirmar este. No se ha cobrado nada.",
+  callUs: "¿Preguntas? Llámanos.",
+  footer: "Recibes este correo porque hiciste un pedido con nosotros.",
+};
+const orderRejectedIt: OrderRejectedCopy = {
+  subject: (n, venue) => `Il tuo ordine n. ${n} da ${venue} non è stato accettato`,
+  eyebrow: "Ordine non accettato",
+  heading: "Ci dispiace",
+  lead: (n) => `Purtroppo non abbiamo potuto accettare il tuo ordine n. ${n}.`,
+  why: "Confermiamo ogni ordine in contanti per telefono e non siamo riusciti a confermare questo. Non è stato addebitato nulla.",
+  callUs: "Domande? Chiamaci.",
+  footer: "Ricevi questa email perché hai effettuato un ordine da noi.",
+};
+const orderRejectedAr: OrderRejectedCopy = {
+  subject: (n, venue) => `تعذّر قبول طلبك رقم ${n} من ${venue}`,
+  eyebrow: "لم يتم قبول الطلب",
+  heading: "نأسف لذلك",
+  lead: (n) => `للأسف لم نتمكن من قبول طلبك رقم ${n}.`,
+  why: "نؤكد كل طلب يُدفع نقدًا عبر الهاتف ولم نتمكن من تأكيد هذا الطلب. لم يتم تحصيل أي مبلغ.",
+  callUs: "لديك أسئلة؟ اتصل بنا.",
+  footer: "تصلك هذه الرسالة لأنك طلبت منّا.",
+};
+
+export const ORDER_REJECTED_COPY: Record<UiLocale, OrderRejectedCopy> = {
+  en: orderRejectedEn,
+  de: orderRejectedDe,
+  fr: orderRejectedFr,
+  es: orderRejectedEs,
+  it: orderRejectedIt,
+  ar: orderRejectedAr,
+};
+
+export const orderRejectedCopy = (locale?: string | null): OrderRejectedCopy =>
+  ORDER_REJECTED_COPY[uiLocale(locale)];

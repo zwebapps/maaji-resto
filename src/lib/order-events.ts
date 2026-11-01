@@ -34,6 +34,8 @@ export type OrderEventKind =
   | "paypal.webhook"
   | "paypal.capture"
   | "order.accepted"
+  | "order.confirmed"
+  | "order.rejected"
   | "order.status"
   | "order.cancelled"
   | "order.dispatched"

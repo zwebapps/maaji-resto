@@ -6,7 +6,12 @@ import { recordForOrder, recordOrderEventTx, staffActor } from "./order-events";
 export { orderLabel };
 import { z } from "zod";
 import { customerProfileUpdateData, type CustomerProfilePatch } from "./customer-auth";
-import { TERMINAL_STATUSES, canTransition, isOrderStatus } from "./order-status";
+import {
+  TERMINAL_STATUSES,
+  awaitingConfirmation,
+  canTransition,
+  isOrderStatus,
+} from "./order-status";
 import { OFFER_GRACE_MINUTES, effectiveItemPrice } from "./offer-pricing";
 import { availableOnDayAt } from "./item-days";
 import { paypalAvailable } from "./paypal";
@@ -21,6 +26,7 @@ import { parseLoyaltyConfig } from "./loyalty-config";
 import { isLocaleCode } from "./locales";
 import { displayPhone, parseContactConfig, telHref } from "./contact-config";
 import { attachVoucherToOrder, claimArmedVoucher } from "./loyalty-service";
+import { checkOrderEmailToken } from "./order-email-code";
 import { attachGiftCardToOrder, claimGiftCardForOrder } from "./gift-card-service";
 import {
   deliveryQuote,
@@ -110,6 +116,12 @@ export const placeOrderSchema = z
      * kitchen, and mailed from markOrderPaid once the payment settles.
      */
     intendedPayment: z.enum(["cash", "card", "paypal"]).optional(),
+    /**
+     * Proof the guest verified `customerEmail` with the mailed code
+     * (`src/lib/order-email-code.ts`). Required for cash pickup / delivery
+     * while the venue's `verifyCash` switch is on; ignored otherwise.
+     */
+    emailToken: z.string().max(1000).optional(),
     /** The language the guest is using ("de", "en", …). Unknown codes are
      *  dropped rather than refusing the order. */
     locale: z
@@ -241,7 +253,8 @@ export type PlaceOrderResult =
         | "invalid_time"
         | "venue_closed"
         | "venue_paused"
-        | "cash_not_available";
+        | "cash_not_available"
+        | "email_unverified";
     };
 
 /** "app" — the restaurant's phone app; "web" — the website. */
@@ -317,6 +330,19 @@ export async function placeOrder(
       !cashAllowed(mode, orderType)
     ) {
       return { ok: false, error: "cash_not_available" as const };
+    }
+    // Cash pickup / delivery (owner, 2026-11-01): the guest proved their
+    // email with a mailed code, and staff confirm the order by phone
+    // before it counts. Dine-in skips both — the guest is at the table.
+    const confirmByPhone =
+      (input.intendedPayment ?? "cash") === "cash" &&
+      orderType !== "dine_in" &&
+      mode.verifyCash === true;
+    if (
+      confirmByPhone &&
+      !checkOrderEmailToken(input.emailToken, context.venueId, input.customerEmail)
+    ) {
+      return { ok: false, error: "email_unverified" as const };
     }
     // The restaurant switched ordering off for now ("stop taking orders"):
     // nothing is accepted until it runs out, a planned order included.
@@ -616,6 +642,8 @@ export async function placeOrder(
         customerName: orderType === "dine_in" ? null : input.customerName || null,
         customerPhone: orderType === "dine_in" ? null : input.customerPhone || null,
         customerEmail: input.customerEmail?.toLowerCase() || null,
+        // A bill a reward or gift card covered in full is paid, not cash.
+        needsConfirmation: confirmByPhone && !fullyCovered,
         locale: input.locale ?? null,
         deliveryAddress: orderType === "delivery" && input.address ? input.address : undefined,
         requestedFor,
@@ -952,6 +980,9 @@ export interface KitchenOrder extends OrderFulfilment {
    *  order was paid — the two inputs of `orderEta` (`order-eta.ts`). */
   etaMinutes: number | null;
   paidAt: Date | null;
+  /** Cash order awaiting / past its confirmation call (owner, 2026-11-01). */
+  needsConfirmation: boolean;
+  confirmedAt: Date | null;
   /** `basePriceCents`: the regular price an offer was cut from (null = no offer). */
   items: { name: string; priceCents: number; quantity: number; basePriceCents?: number | null }[];
 }
@@ -1047,6 +1078,8 @@ export async function listRecentOrders(
         outForDeliveryAt: true,
         etaMinutes: true,
         paidAt: true,
+        needsConfirmation: true,
+        confirmedAt: true,
         items: {
           select: { name: true, priceCents: true, quantity: true },
           orderBy: { createdAt: "asc" },
@@ -1093,6 +1126,8 @@ export async function getKitchenOrder(
         outForDeliveryAt: true,
         etaMinutes: true,
         paidAt: true,
+        needsConfirmation: true,
+        confirmedAt: true,
         items: {
           select: { name: true, priceCents: true, basePriceCents: true, quantity: true },
           orderBy: { createdAt: "asc" },
@@ -1158,13 +1193,24 @@ export async function advanceOrderStatus(
   const moved = await asUser(userId, async (tx) => {
     const order = await tx.order.findFirst({
       where: { id: orderId },
-      select: { status: true, orderType: true, tenantId: true, paymentStatus: true },
+      select: {
+        status: true,
+        orderType: true,
+        tenantId: true,
+        paymentStatus: true,
+        needsConfirmation: true,
+        confirmedAt: true,
+      },
     });
     if (!order || !canTransition(order.status, to, order.orderType)) return null;
     const updated = await tx.order.updateMany({
       where: { id: orderId, status: order.status },
       data: {
         status: to,
+        // Moving a cash order that still awaited its confirmation call
+        // forward IS accepting it (a staff device that predates Accept /
+        // Reject only has the step buttons) — so it is confirmed now.
+        ...(to !== "cancelled" && awaitingConfirmation(order) ? { confirmedAt: new Date() } : {}),
         // Stamp the moment it left, once. Written in the SAME conditional
         // update as the transition, so the guard that makes the move
         // idempotent makes the timestamp idempotent too — whichever
@@ -1240,10 +1286,15 @@ export async function acceptOrderWithEta(
         createdAt: true,
         paidAt: true,
         etaMinutes: true,
+        needsConfirmation: true,
+        confirmedAt: true,
         venue: { select: { ordering: true } },
       },
     });
     if (!order) return { ok: false as const, error: "not_found" as const };
+    // Waiting for its confirmation call: accepting it IS confirming it,
+    // with no window (see confirmCashOrder) — handled below.
+    if (awaitingConfirmation(order)) return { ok: "confirm" as const };
     const config = parseOrderingConfig(order.venue.ordering);
     if (!etaApplies(order) || order.status !== "placed" || order.etaMinutes !== null) {
       return { ok: false as const, error: "not_applicable" as const };
@@ -1259,6 +1310,11 @@ export async function acceptOrderWithEta(
     if (updated.count === 0) return { ok: false as const, error: "not_applicable" as const };
     return { ok: true as const, minutes, tenantId: order.tenantId };
   });
+  if (result.ok === "confirm") {
+    const confirmed = await confirmCashOrder(userId, orderId, minutesRaw);
+    if (!confirmed.ok) return { ok: false, error: "not_applicable" };
+    return { ok: true, minutes: confirmed.minutes ?? 0 };
+  }
   if (!result.ok) return result;
   await recordForOrder(result.tenantId, orderId, {
     kind: "order.accepted",
@@ -1270,6 +1326,97 @@ export async function acceptOrderWithEta(
   // every surface uses, so its side effects stay in one place.
   await advanceOrderStatus(userId, orderId, "preparing");
   return { ok: true, minutes: result.minutes };
+}
+
+export type ConfirmOrderError = "not_found" | "not_applicable";
+
+/**
+ * Accept a cash order after the confirmation call (owner, 2026-11-01).
+ * The call took as long as it took, so there is no window: the order
+ * reaches the board NOW (`confirmedAt`), an ASAP pickup / delivery order
+ * with the minutes staff chose (the same − / + as every accept), counted
+ * from this moment, and moves to `preparing`. A planned order keeps the
+ * guest's time and stays `placed` until the kitchen starts it.
+ *
+ * Conditional on still being unconfirmed, so two devices accepting at
+ * once cannot both win, and a rejected order cannot be accepted.
+ */
+export async function confirmCashOrder(
+  userId: string,
+  orderId: string,
+  minutesRaw?: number,
+): Promise<{ ok: true; minutes: number | null } | { ok: false; error: ConfirmOrderError }> {
+  const result = await asUser(userId, async (tx) => {
+    const order = await tx.order.findFirst({
+      where: { id: orderId },
+      select: {
+        tenantId: true,
+        status: true,
+        orderType: true,
+        requestedFor: true,
+        needsConfirmation: true,
+        confirmedAt: true,
+        venue: { select: { ordering: true } },
+      },
+    });
+    if (!order) return { ok: false as const, error: "not_found" as const };
+    if (!awaitingConfirmation(order) || order.status !== "placed") {
+      return { ok: false as const, error: "not_applicable" as const };
+    }
+    const config = parseOrderingConfig(order.venue.ordering);
+    const minutes = etaApplies(order)
+      ? clampEtaMinutes(minutesRaw, defaultEtaMinutes(order.orderType, config))
+      : null;
+    const updated = await tx.order.updateMany({
+      where: { id: orderId, status: "placed", confirmedAt: null },
+      data: { confirmedAt: new Date(), ...(minutes !== null ? { etaMinutes: minutes } : {}) },
+    });
+    if (updated.count === 0) return { ok: false as const, error: "not_applicable" as const };
+    return { ok: true as const, minutes, tenantId: order.tenantId };
+  });
+  if (!result.ok) return result;
+  await recordForOrder(result.tenantId, orderId, {
+    kind: "order.confirmed",
+    actor: await staffActor(userId),
+    summary:
+      result.minutes !== null
+        ? `Confirmed by phone · ready in ${result.minutes} min`
+        : "Confirmed by phone",
+    payload: { minutes: result.minutes },
+  });
+  if (result.minutes !== null) await advanceOrderStatus(userId, orderId, "preparing");
+  return { ok: true, minutes: result.minutes };
+}
+
+/**
+ * Reject a cash order the confirmation call could not confirm (wrong
+ * number, no answer, a prank). It is cancelled through the one status
+ * function — so loyalty points earned at placement are reversed like any
+ * cancel — and the guest is told by email.
+ */
+export async function rejectCashOrder(
+  userId: string,
+  orderId: string,
+): Promise<{ ok: true } | { ok: false; error: ConfirmOrderError }> {
+  const order = await asUser(userId, (tx) =>
+    tx.order.findFirst({
+      where: { id: orderId },
+      select: { tenantId: true, status: true, needsConfirmation: true, confirmedAt: true },
+    }),
+  );
+  if (!order) return { ok: false, error: "not_found" };
+  if (!awaitingConfirmation(order)) return { ok: false, error: "not_applicable" };
+  const moved = await advanceOrderStatus(userId, orderId, "cancelled");
+  if (!moved.ok) return { ok: false, error: "not_applicable" };
+  await recordForOrder(order.tenantId, orderId, {
+    kind: "order.rejected",
+    actor: await staffActor(userId),
+    summary: "Rejected after the confirmation call",
+    payload: {},
+  });
+  const { sendOrderRejectedEmail } = await import("./order-rejected-email");
+  void sendOrderRejectedEmail(order.tenantId, orderId).catch(() => undefined);
+  return { ok: true };
 }
 
 export interface OrderTracking {
@@ -1364,6 +1511,8 @@ export async function getOrderTracking(
         outForDeliveryAt: true,
         etaMinutes: true,
         paidAt: true,
+        needsConfirmation: true,
+        confirmedAt: true,
         customer: { select: { reviewClickedAt: true } },
         items: {
           select: { name: true, quantity: true, priceCents: true, basePriceCents: true },

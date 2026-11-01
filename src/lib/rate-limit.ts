@@ -205,6 +205,23 @@ export const ORDER_IP: RateLimitConfig = {
   windowSec: 60,
   failOpen: true,
 };
+// Cash-order email codes (owner, 2026-11-01). Each send is a real email,
+// so both an IP and the target address are capped: a guest who mistyped
+// and resends a few times never notices, a script mailing strangers stops
+// at three per address per hour. failOpen like ordering: Redis down must
+// not block checkout (the in-process fallback keeps the same caps).
+export const ORDER_CODE_IP: RateLimitConfig = {
+  scope: "order-code:ip",
+  limit: 10,
+  windowSec: 3600,
+  failOpen: true,
+};
+export const ORDER_CODE_EMAIL: RateLimitConfig = {
+  scope: "order-code:email",
+  limit: 3,
+  windowSec: 3600,
+  failOpen: true,
+};
 // Mobile device-pairing codes. The codes themselves are ~60 bits, single
 // use and expire in 10 minutes, so this is not brute-force defence — it
 // bounds how many Redis keys an anonymous caller can mint. Generous
