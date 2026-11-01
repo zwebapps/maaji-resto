@@ -63,6 +63,14 @@ const CSP = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // No "x-powered-by: Next.js" on every response — it only tells a scanner
+  // which framework (and so which advisories) to try.
+  poweredByHeader: false,
+  // The app never uses next/image (photos go through our own /img route),
+  // so Next's optimizer endpoint /_next/image is pure attack surface —
+  // it carried unauthenticated-RCE advisories in 16.x. Off here, and
+  // refused outright by Caddy (deploy/Caddyfile) in case it ever comes back.
+  images: { unoptimized: true },
   // Version-skew protection (self-hosted, one container replaced per
   // deploy): assets carry ?dpl=<id>, client navigations send
   // x-deployment-id, and on a mismatch Next does a full reload instead of

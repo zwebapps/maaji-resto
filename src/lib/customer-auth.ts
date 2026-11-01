@@ -630,7 +630,7 @@ export async function verifyGoogleIdToken(idToken: string): Promise<CustomerIden
 const APPLE_ISSUER = "https://appleid.apple.com";
 const APPLE_JWKS_URL = "https://appleid.apple.com/auth/keys";
 /** The store build's bundle id — the audience when the env names none. */
-const APPLE_DEFAULT_CLIENT_ID = "de.ranglapunjabrestaurant.app";
+const APPLE_DEFAULT_CLIENT_ID = "de.maajirestaurant.app";
 
 let appleOverride: GoogleIdTokenConfig | null = null;
 export function setAppleIdTokenConfigForTests(config: GoogleIdTokenConfig | null): void {

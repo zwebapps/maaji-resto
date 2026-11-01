@@ -35,6 +35,13 @@ www.{$APP_DOMAIN} {
 		max_size 50MB
 	}
 
+	# Next's image optimizer is unused (photos go through the app's own
+	# /img route) and has carried unauthenticated-RCE advisories: never let
+	# a request reach it, whatever next.config.ts says.
+	handle /_next/image* {
+		respond 404
+	}
+
 	# Live logs (Dozzle, opt-in — see docker-compose.prod.yml). Dozzle
 	# serves its own login page; when the profile is off this answers 502
 	# for /logs and nothing else changes.

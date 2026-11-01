@@ -47,12 +47,9 @@
     ],
     "extra": {
       "brand": {
-        "venueSlug": "rangla-punjab",
-        "venueName": "Rangla Punjab",
-        "themeId": "rangla-royal"
-      },
-      "eas": {
-        "projectId": "dd669a2b-f955-43a5-bfce-a5d77106b00b"
+        "venueSlug": "maaji-restaurant",
+        "venueName": "Maaji",
+        "themeId": "maaji-emerald"
       }
     },
     "owner": "zahoor1989"

@@ -16,7 +16,7 @@ import { POST } from "./route";
  * first sign-in and the email may be missing later — neither may be wiped.
  */
 
-const AUD = "de.ranglapunjabrestaurant.app";
+const AUD = "de.maajirestaurant.app";
 
 describe("POST /api/auth/customer/apple", () => {
   let tenantId: string;
