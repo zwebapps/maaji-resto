@@ -478,11 +478,6 @@ export function MenuView({
           {t.banners.orderingPaused}
         </div>
       ) : null}
-      {/* Above the navigation (owner, 2026-11-06). In the page flow, not in
-          the sticky bar, so it scrolls away and leaves the menu its room. */}
-      <p className="bg-[var(--menu-surface)] px-4 py-1.5 text-center text-xs text-[var(--menu-surface-text,var(--menu-text))]">
-        {t.footer.photoDisclaimer}
-      </p>
       {kioskFontPx ? (
         // The Add pill's 11px label is deliberately fixed for phones; on
         // the kiosk it must grow too or the tap target stays finger-
@@ -2172,6 +2167,14 @@ function StickyBar({
               t={t}
             />
           </div>
+          {/* The photo disclaimer, centred beside the restaurant's name (owner,
+              2026-11-06). Only where that middle is free: the side rail on a
+              desktop. Everywhere else it takes its own line, below. */}
+          {sideNav ? (
+            <p className="hidden min-w-0 flex-1 px-4 text-center text-[11px] leading-snug opacity-80 lg:block">
+              {t.footer.photoDisclaimer}
+            </p>
+          ) : null}
           {/* Open/closed pill + reserve button + rating + app jump: right
               corner at every width. Same order as the hero's stack, so a
               venue with a banner and one without put the badges in the
@@ -2188,6 +2191,14 @@ function StickyBar({
           </div>
         </div>
       )}
+      {/* The disclaimer's line where the row above has no room for it. */}
+      <p
+        className={`px-4 pb-1 text-center text-[11px] leading-snug opacity-80 ${
+          sideNav && !hero ? "lg:hidden" : ""
+        }`}
+      >
+        {t.footer.photoDisclaimer}
+      </p>
       {/* Categories on a second row on tablet/mobile (hidden above on lg) */}
       <div className="border-t border-[var(--menu-text)]/10 lg:hidden">
         <div className="mx-auto max-w-none px-4 py-2.5 sm:px-6 sm:py-3">
