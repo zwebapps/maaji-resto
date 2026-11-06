@@ -83,6 +83,8 @@ interface NewItem {
   photoFrom?: string;
   /** Monday-first day indexes (src/lib/item-days.ts); absent = leave as is. */
   availableDays?: number[];
+  /** Sold at the table only; absent = leave as is. */
+  dineInOnly?: boolean;
 }
 interface NewCategory {
   id: string;
@@ -130,6 +132,7 @@ interface DraftItem {
   offerPriceCents: number | null;
   deletedAt: Date | null;
   availableDays?: number[];
+  dineInOnly?: boolean;
 }
 interface DraftCategory {
   id: string;
@@ -180,6 +183,7 @@ interface ItemPlan {
     isAvailable: boolean;
     photoMediaId?: string;
     availableDays?: number[];
+    dineInOnly?: boolean;
   };
 }
 interface CategoryPlan {
@@ -354,6 +358,7 @@ export function buildPlan(
         orderIndex: (ii + 1) * ORDER_STEP,
         isAvailable: true,
         ...(item.availableDays ? { availableDays: item.availableDays } : {}),
+        ...(item.dineInOnly !== undefined ? { dineInOnly: item.dineInOnly } : {}),
       };
       // Only ever fills a gap: a dish's own photo always wins.
       if (item.photoFrom && !row?.photoMediaId) {
@@ -371,6 +376,9 @@ export function buildPlan(
           changes.push(
             `days [${(row.availableDays ?? []).join(",")}] → [${data.availableDays.join(",")}]`,
           );
+        }
+        if (data.dineInOnly !== undefined && (row.dineInOnly ?? false) !== data.dineInOnly) {
+          changes.push(`dine-in only ${data.dineInOnly ? "on" : "off"}`);
         }
         if (row.name !== data.name || (row.description ?? null) !== data.description) {
           plan.staleTranslations.push({ entityType: "item", entityId: row.id });
@@ -495,6 +503,7 @@ const draftSelect = {
       offerPriceCents: true,
       deletedAt: true,
       availableDays: true,
+      dineInOnly: true,
     },
     orderBy: { orderIndex: "asc" },
   },

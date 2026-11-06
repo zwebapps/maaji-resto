@@ -255,6 +255,30 @@ describe("a card that replaces the whole menu", () => {
     ]);
   });
 
+  it("sets dine-in only when the card says so, and is a no-op once set", () => {
+    const menu = {
+      categories: [
+        {
+          id: "g",
+          name: "Gerichte",
+          items: [dish("a", "Cola 0,33l", { dineInOnly: true })],
+        },
+      ],
+    };
+    const row = (dineInOnly: boolean) => [
+      {
+        id: "veg",
+        name: "Gerichte",
+        orderIndex: 100,
+        items: [item("Cola 0,33l", { dineInOnly, orderIndex: 100 })],
+      },
+    ];
+    const first = buildPlan(menu, row(false), "union");
+    expect(first.items[0]!.changes).toEqual(["dine-in only on"]);
+    expect(first.items[0]!.data.dineInOnly).toBe(true);
+    expect(buildPlan(menu, row(true), "union").items).toEqual([]);
+  });
+
   it("ends an inherited offer only when asked", () => {
     const withOffer = [
       {

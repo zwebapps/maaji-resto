@@ -2639,7 +2639,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": ["h7", "g1"],
-          "matchNames": ["Mango Lassi 0,3l"]
+          "matchNames": ["Mango Lassi 0,3l"],
+          "dineInOnly": true
         },
         {
           "id": "lassi--mango-lassi-0-5l",
@@ -2665,7 +2666,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": ["g1"],
-          "matchNames": ["Rosen Lassi 0,3l"]
+          "matchNames": ["Rosen Lassi 0,3l"],
+          "dineInOnly": true
         },
         {
           "id": "lassi--rosen-lassi-0-5l",
@@ -2691,7 +2693,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": ["g1"],
-          "matchNames": ["Granatapfel Lassi 0,3l"]
+          "matchNames": ["Granatapfel Lassi 0,3l"],
+          "dineInOnly": true
         },
         {
           "id": "lassi--granatapfel-lassi-0-5l",
@@ -2717,7 +2720,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": ["h7", "g1"],
-          "matchNames": ["Kokos Lassi 0,3l"]
+          "matchNames": ["Kokos Lassi 0,3l"],
+          "dineInOnly": true
         },
         {
           "id": "lassi--kokos-lassi-0-5l",
@@ -2743,7 +2747,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": ["g1"],
-          "matchNames": ["Erdbeer Lassi 0,3l"]
+          "matchNames": ["Erdbeer Lassi 0,3l"],
+          "dineInOnly": true
         },
         {
           "id": "lassi--erdbeer-lassi-0-5l",
@@ -2769,7 +2774,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": ["g1"],
-          "matchNames": ["Salziges Lassi 0,3l"]
+          "matchNames": ["Salziges Lassi 0,3l"],
+          "dineInOnly": true
         },
         {
           "id": "lassi--lassi-salzig-0-5l",
@@ -2795,7 +2801,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": ["g1"],
-          "photoFrom": "Salziges Lassi 0,3l"
+          "photoFrom": "Salziges Lassi 0,3l",
+          "dineInOnly": true
         },
         {
           "id": "lassi--lassi-suss-0-5l",
@@ -3116,7 +3123,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": [],
-          "photoFrom": "Mineralwasser Classic 0,75l"
+          "photoFrom": "Mineralwasser Classic 0,75l",
+          "dineInOnly": true
         },
         {
           "id": "wasser--wasser-mit-kohlensaure-0-5l",
@@ -3155,7 +3163,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": [],
-          "photoFrom": "Mineralwasser still 0,75l"
+          "photoFrom": "Mineralwasser still 0,75l",
+          "dineInOnly": true
         },
         {
           "id": "wasser--wasser-still-0-5l",
@@ -3194,7 +3203,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": ["h8"],
-          "matchNames": ["Coca-Cola 0,33l"]
+          "matchNames": ["Coca-Cola 0,33l"],
+          "dineInOnly": true
         },
         {
           "id": "wasser--cola-0-5l",
@@ -3220,7 +3230,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": ["h8"],
-          "matchNames": ["Fanta 0,33l"]
+          "matchNames": ["Fanta 0,33l"],
+          "dineInOnly": true
         },
         {
           "id": "wasser--fanta-0-5l",
@@ -3246,7 +3257,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": [],
-          "photoFrom": "Coca-Cola 0,33l"
+          "photoFrom": "Coca-Cola 0,33l",
+          "dineInOnly": true
         },
         {
           "id": "wasser--fanta-dose-0-33l",
@@ -3259,7 +3271,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": [],
-          "photoFrom": "Fanta 0,33l"
+          "photoFrom": "Fanta 0,33l",
+          "dineInOnly": true
         },
         {
           "id": "wasser--mezzo-mix-dose-0-33l",
@@ -3272,7 +3285,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": [],
-          "matchNames": ["Mezzo-Mix 0,33l"]
+          "matchNames": ["Mezzo-Mix 0,33l"],
+          "dineInOnly": true
         },
         {
           "id": "wasser--sprite-dose-0-33l",
@@ -3285,7 +3299,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": [],
-          "matchNames": ["Sprite 0,33l"]
+          "matchNames": ["Sprite 0,33l"],
+          "dineInOnly": true
         }
       ],
       "matchNames": ["Kalte Getränke"]
