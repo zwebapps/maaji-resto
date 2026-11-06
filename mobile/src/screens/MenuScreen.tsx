@@ -228,6 +228,9 @@ export function MenuScreen({
         title={(staffMode || staffPending) && canEdit ? t.staffMenuTitle : t.categories}
         onMenu={onOpenOwnerMenu}
       />
+      {/* Above the category navigation (owner, 2026-11-06). Under the brand
+          header rather than over it: that one owns the status-bar inset. */}
+      <Text style={styles.photoDisclaimer}>{t.photoDisclaimer}</Text>
       <View style={styles.chipBar}>
         <ScrollView
           horizontal
@@ -415,6 +418,15 @@ function Chip({
 }
 
 const styles = StyleSheet.create({
+  photoDisclaimer: {
+    color: colors.inkSoft,
+    ...fonts.body,
+    fontSize: 11.5,
+    textAlign: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 5,
+    backgroundColor: colors.cream,
+  },
   chipBar: {
     backgroundColor: colors.creamCard,
     borderBottomWidth: 1,

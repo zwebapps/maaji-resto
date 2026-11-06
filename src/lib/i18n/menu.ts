@@ -169,6 +169,9 @@ const en = {
     draftPreview: "Draft preview — your private link. Guests only see what you publish.",
   },
   footer: {
+    /** Under the dishes (owner, 2026-11-06). */
+    photoDisclaimer:
+      "Images are for illustration purposes only. The presentation of dishes may vary.",
     poweredBy: (brand: string): string => `Powered by ${brand} · Digital Menus`,
     /** The restaurant's own copyright line, first in the bottom row.
      *  `year` is resolved once per render, `name` is the venue's. */
@@ -387,6 +390,8 @@ const de: MenuCopy = {
     draftPreview: "Entwurfsvorschau — Ihr privater Link. Gäste sehen nur, was Sie veröffentlichen.",
   },
   footer: {
+    photoDisclaimer:
+      "Abbildungen dienen nur zur Illustration. Die Präsentation der Gerichte kann abweichen.",
     poweredBy: (brand) => `Bereitgestellt von ${brand} · Digitale Speisekarten`,
     copyright: (year, name) => `© ${year} ${name} · Alle Rechte vorbehalten`,
     acceptedPayments: "Akzeptierte Zahlungsmittel",
@@ -572,6 +577,8 @@ const fr: MenuCopy = {
       "Aperçu du brouillon — votre lien privé. Les clients ne voient que ce que vous publiez.",
   },
   footer: {
+    photoDisclaimer:
+      "Photos à titre d'illustration uniquement. La présentation des plats peut varier.",
     poweredBy: (brand) => `Propulsé par ${brand} · Cartes numériques`,
     copyright: (year, name) => `© ${year} ${name} · Tous droits réservés`,
     acceptedPayments: "Moyens de paiement acceptés",
@@ -755,6 +762,8 @@ const es: MenuCopy = {
       "Vista previa del borrador: su enlace privado. Los clientes solo ven lo publicado.",
   },
   footer: {
+    photoDisclaimer:
+      "Las imágenes son solo ilustrativas. La presentación de los platos puede variar.",
     poweredBy: (brand) => `Con tecnología de ${brand} · Cartas digitales`,
     copyright: (year, name) => `© ${year} ${name} · Todos los derechos reservados`,
     acceptedPayments: "Pagos aceptados",
@@ -937,6 +946,8 @@ const it: MenuCopy = {
       "Anteprima della bozza: il vostro link privato. Gli ospiti vedono solo ciò che pubblicate.",
   },
   footer: {
+    photoDisclaimer:
+      "Le immagini sono solo a scopo illustrativo. La presentazione dei piatti può variare.",
     poweredBy: (brand) => `Servizio offerto da ${brand} · Menu digitali`,
     copyright: (year, name) => `© ${year} ${name} · Tutti i diritti riservati`,
     acceptedPayments: "Pagamenti accettati",
@@ -1131,6 +1142,7 @@ const ar: MenuCopy = {
     draftPreview: "معاينة المسودة — رابطكم الخاص. لا يرى الضيوف سوى ما تنشرونه.",
   },
   footer: {
+    photoDisclaimer: "الصور للتوضيح فقط، وقد يختلف تقديم الأطباق.",
     poweredBy: (brand) => `مُقدَّم من ${brand} · قوائم طعام رقمية`,
     copyright: (year, name) => `© ${year} ${name} · جميع الحقوق محفوظة`,
     acceptedPayments: "طرق الدفع المقبولة",

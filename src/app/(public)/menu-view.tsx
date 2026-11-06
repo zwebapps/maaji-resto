@@ -478,6 +478,11 @@ export function MenuView({
           {t.banners.orderingPaused}
         </div>
       ) : null}
+      {/* Above the navigation (owner, 2026-11-06). In the page flow, not in
+          the sticky bar, so it scrolls away and leaves the menu its room. */}
+      <p className="bg-[var(--menu-surface)] px-4 py-1.5 text-center text-xs text-[var(--menu-surface-text,var(--menu-text))]">
+        {t.footer.photoDisclaimer}
+      </p>
       {kioskFontPx ? (
         // The Add pill's 11px label is deliberately fixed for phones; on
         // the kiosk it must grow too or the tap target stays finger-
