@@ -607,7 +607,8 @@
           "spice": 0,
           "pdfCodes": ["g1"],
           "photoFrom": "Vegetarisches Thali – Freitag",
-          "availableDays": [0, 1, 2, 3, 4]
+          "availableDays": [0, 1, 2, 3, 4],
+          "dineInOnly": true
         },
         {
           "id": "menue--74-maaji-2-chicken-mit-mango-lassi-0-3l",
@@ -621,7 +622,8 @@
           "spice": 0,
           "pdfCodes": [],
           "photoFrom": "Thali mit Fleisch – Freitag",
-          "availableDays": [0, 1, 2, 3, 4]
+          "availableDays": [0, 1, 2, 3, 4],
+          "dineInOnly": true
         },
         {
           "id": "menue--75-maaji-3-chicken-mit-mango-lassi-0-3l",
@@ -635,7 +637,8 @@
           "spice": 0,
           "pdfCodes": [],
           "photoFrom": "Thali mit Fleisch – Freitag",
-          "availableDays": [0, 1, 2, 3, 4]
+          "availableDays": [0, 1, 2, 3, 4],
+          "dineInOnly": true
         }
       ],
       "notes": "Werktags Montag – Freitag 11.30 – 14.30 Uhr. Keine Umbestellungen / keine Wahlmöglichkeit",
@@ -2960,7 +2963,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": [],
-          "photoFrom": "Granatapfel Lassi 0,3l"
+          "photoFrom": "Granatapfel Lassi 0,3l",
+          "dineInOnly": true
         },
         {
           "id": "saft--granatapfel-saft-oder-schorle-0-5l",
@@ -2986,7 +2990,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": [],
-          "photoFrom": "Mangosaft 0,5l"
+          "photoFrom": "Mangosaft 0,5l",
+          "dineInOnly": true
         },
         {
           "id": "saft--mango-saft-oder-schorle-0-5l",
@@ -3012,7 +3017,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": [],
-          "photoFrom": "Ananassaft 0,3l"
+          "photoFrom": "Ananassaft 0,3l",
+          "dineInOnly": true
         },
         {
           "id": "saft--guave-saft-oder-schorle-0-5l",
@@ -3038,7 +3044,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": [],
-          "photoFrom": "Orangensaft 0,5l"
+          "photoFrom": "Orangensaft 0,5l",
+          "dineInOnly": true
         },
         {
           "id": "saft--pfirsich-saft-oder-schorle-0-5l",
@@ -3064,7 +3071,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": [],
-          "photoFrom": "Johannisbeersaft 0,3l"
+          "photoFrom": "Johannisbeersaft 0,3l",
+          "dineInOnly": true
         },
         {
           "id": "saft--johannisbeer-saft-oder-schorle-0-5l",
@@ -3090,7 +3098,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": [],
-          "photoFrom": "Apfel-Saft 0,5l"
+          "photoFrom": "Apfel-Saft 0,5l",
+          "dineInOnly": true
         },
         {
           "id": "saft--apfel-saft-oder-schorle-0-5l",
@@ -3346,7 +3355,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": [],
-          "matchNames": ["Radler alkoholfrei 0,5l"]
+          "matchNames": ["Radler alkoholfrei 0,5l"],
+          "dineInOnly": true
         }
       ],
       "matchNames": ["Bier alkoholfrei"]
@@ -3457,7 +3467,8 @@
           "dietary": [],
           "spice": 0,
           "pdfCodes": [],
-          "photoFrom": "Kaffee"
+          "photoFrom": "Kaffee",
+          "dineInOnly": true
         },
         {
           "id": "tee-kaffee--iced-kaffee-0-5l",
