@@ -240,8 +240,7 @@ const en = {
   namePlaceholder: "Your name",
   phone: "Phone",
   receiptEmail: "Email (optional)",
-  photoDisclaimer:
-    "Images are for illustration purposes only. The presentation of dishes may vary.",
+  photoDisclaimer: "Illustrative images; presentation may vary.",
   emailCodeLabel: "Email — we'll send you a code to confirm it",
   sendCode: "Send code",
   resendCode: "Send a new code",
@@ -1270,8 +1269,7 @@ const de: Strings = {
   namePlaceholder: "Dein Name",
   phone: "Telefon",
   receiptEmail: "E-Mail (optional)",
-  photoDisclaimer:
-    "Abbildungen dienen nur zur Illustration. Die Präsentation der Gerichte kann abweichen.",
+  photoDisclaimer: "Abbildungen ähnlich, Präsentation kann abweichen.",
   emailCodeLabel: "E-Mail — wir senden Ihnen einen Code zur Bestätigung",
   sendCode: "Code senden",
   resendCode: "Neuen Code senden",
@@ -2294,8 +2292,7 @@ const fr: Strings = {
   namePlaceholder: "Votre nom",
   phone: "Téléphone",
   receiptEmail: "E-mail (facultatif)",
-  photoDisclaimer:
-    "Photos à titre d'illustration uniquement. La présentation des plats peut varier.",
+  photoDisclaimer: "Photos d'illustration ; présentation variable.",
   emailCodeLabel: "E-mail — nous vous envoyons un code de confirmation",
   sendCode: "Envoyer le code",
   resendCode: "Envoyer un nouveau code",
@@ -3315,8 +3312,7 @@ const it: Strings = {
   namePlaceholder: "Il tuo nome",
   phone: "Telefono",
   receiptEmail: "E-mail (facoltativa)",
-  photoDisclaimer:
-    "Le immagini sono solo a scopo illustrativo. La presentazione dei piatti può variare.",
+  photoDisclaimer: "Immagini illustrative; la presentazione può variare.",
   emailCodeLabel: "Email — ti inviamo un codice per confermarla",
   sendCode: "Invia codice",
   resendCode: "Invia un nuovo codice",
@@ -4334,8 +4330,7 @@ const es: Strings = {
   namePlaceholder: "Tu nombre",
   phone: "Teléfono",
   receiptEmail: "Correo electrónico (opcional)",
-  photoDisclaimer:
-    "Las imágenes son solo ilustrativas. La presentación de los platos puede variar.",
+  photoDisclaimer: "Imágenes ilustrativas; la presentación puede variar.",
   emailCodeLabel: "Correo — te enviamos un código para confirmarlo",
   sendCode: "Enviar código",
   resendCode: "Enviar un código nuevo",
@@ -5348,7 +5343,7 @@ const ar: Strings = {
   namePlaceholder: "اسمك",
   phone: "الهاتف",
   receiptEmail: "البريد الإلكتروني (اختياري)",
-  photoDisclaimer: "الصور للتوضيح فقط، وقد يختلف تقديم الأطباق.",
+  photoDisclaimer: "الصور للتوضيح، وقد يختلف التقديم.",
   emailCodeLabel: "البريد الإلكتروني — سنرسل لك رمزًا لتأكيده",
   sendCode: "إرسال الرمز",
   resendCode: "إرسال رمز جديد",
