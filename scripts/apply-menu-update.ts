@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import type { Allergen, Dietary, Prisma } from "@prisma/client";
-import { PrismaClient } from "@prisma/client";
+import type { Allergen, Dietary } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { prisma } from "../src/lib/db";
 import { asTenant } from "../src/lib/tenant";
@@ -35,6 +35,13 @@ import { purgeMenuForTenant } from "../src/lib/cdn-purge";
  *                        cannot quietly remove a warning a guest relies on.
  *   --prune-categories   hard-delete draft categories the new menu no longer has
  *                        (off by default; they are reported instead).
+ *   --hide-orphan-categories  soft-delete the dishes of those categories instead:
+ *                        the public menu drops a category with no dishes, and a
+ *                        later run can revive them. For a card that fully
+ *                        replaces the menu ("only this menu").
+ *   --clear-offers       end every running offer on the card's dishes: a matched
+ *                        row keeps its offer otherwise, so a rewritten dish would
+ *                        inherit the discount of the dish it replaced.
  *
  * WHAT IT DOES. Everything runs against the draft, exactly like the menu
  * editor in the dashboard:
@@ -71,12 +78,19 @@ interface NewItem {
   dietary: string[];
   spice: number;
   matchNames?: string[];
+  /** Borrow the photo of this draft dish (any category) when this one has
+   *  none — for a new dish that looks like an existing one. */
+  photoFrom?: string;
+  /** Monday-first day indexes (src/lib/item-days.ts); absent = leave as is. */
+  availableDays?: number[];
 }
 interface NewCategory {
   id: string;
   name: string;
   notes?: string;
   matchNames?: string[];
+  /** Same as an item's `photoFrom`, for a new category's picture. */
+  photoFrom?: string;
   items: NewItem[];
 }
 interface NewMenu {
@@ -115,11 +129,13 @@ interface DraftItem {
   photoMediaId: string | null;
   offerPriceCents: number | null;
   deletedAt: Date | null;
+  availableDays?: number[];
 }
 interface DraftCategory {
   id: string;
   name: string;
   orderIndex: number;
+  photoMediaId?: string | null;
   items: DraftItem[];
 }
 
@@ -162,6 +178,8 @@ interface ItemPlan {
     spice: number;
     orderIndex: number;
     isAvailable: boolean;
+    photoMediaId?: string;
+    availableDays?: number[];
   };
 }
 interface CategoryPlan {
@@ -170,12 +188,17 @@ interface CategoryPlan {
   draft?: DraftCategory;
   renamedFrom?: string;
   reordered: boolean;
+  photoMediaId?: string;
 }
 interface Plan {
   categories: CategoryPlan[];
   items: ItemPlan[];
   softDeletes: { id: string; category: string; name: string; priceCents: number }[];
   orphanCategories: DraftCategory[];
+  /** Rows whose German text changed: their translations describe the OLD
+   *  dish, so they are dropped and the guest falls back to German until
+   *  the card's own translations are imported. */
+  staleTranslations: { entityType: "item" | "category"; entityId: string }[];
   warnings: string[];
 }
 
@@ -228,27 +251,64 @@ export function buildPlan(
   menu: NewMenu,
   draft: DraftCategory[],
   mode: AllergenMode = "replace",
+  options: { hideOrphanCategories?: boolean; clearOffers?: boolean } = {},
 ): Plan {
   const plan: Plan = {
     categories: [],
     items: [],
     softDeletes: [],
     orphanCategories: [],
+    staleTranslations: [],
     warnings: [],
   };
+  // Every photo in the draft by dish name — hidden dishes included, so a
+  // re-run still finds what the first run borrowed from.
+  const photoOfDish = new Map<string, string>();
+  const photoOfCategory = new Map<string, string>();
+  for (const c of draft) {
+    if (c.photoMediaId) photoOfCategory.set(normaliseName(c.name), c.photoMediaId);
+    for (const i of c.items) {
+      const key = normaliseName(i.name);
+      if (i.photoMediaId && !photoOfDish.has(key)) photoOfDish.set(key, i.photoMediaId);
+    }
+  }
   const pool = new NamePool(draft);
   const claimed = resolveMatches(
     menu.categories.map((c) => ({ key: c.id, name: c.name, matchNames: c.matchNames ?? [] })),
     pool,
   );
   plan.orphanCategories = pool.rest();
+  if (options.hideOrphanCategories) {
+    for (const orphan of plan.orphanCategories) {
+      for (const i of orphan.items) {
+        if (i.deletedAt === null) {
+          plan.softDeletes.push({
+            id: i.id,
+            category: orphan.name,
+            name: i.name,
+            priceCents: i.priceCents,
+          });
+        }
+      }
+    }
+  }
 
   menu.categories.forEach((cat, ci) => {
     const target = claimed.get(cat.id);
     const orderIndex = (ci + 1) * ORDER_STEP;
     if (!target) {
-      plan.categories.push({ kind: "create", newCategory: cat, reordered: false });
+      let photoMediaId: string | undefined;
+      if (cat.photoFrom) {
+        photoMediaId = photoOfCategory.get(normaliseName(cat.photoFrom));
+        if (!photoMediaId) {
+          plan.warnings.push(`category "${cat.name}": no picture found on "${cat.photoFrom}"`);
+        }
+      }
+      plan.categories.push({ kind: "create", newCategory: cat, reordered: false, photoMediaId });
     } else {
+      if (target.name !== cat.name) {
+        plan.staleTranslations.push({ entityType: "category", entityId: target.id });
+      }
       plan.categories.push({
         kind: "update",
         newCategory: cat,
@@ -283,7 +343,7 @@ export function buildPlan(
         mode === "replace" || !row
           ? (item.allergens as Allergen[])
           : ([...new Set([...row.allergens, ...item.allergens])] as Allergen[]);
-      const data = {
+      const data: ItemPlan["data"] = {
         name: item.name,
         description: item.description,
         priceCents: item.priceCents,
@@ -293,9 +353,28 @@ export function buildPlan(
         spice: item.spice,
         orderIndex: (ii + 1) * ORDER_STEP,
         isAvailable: true,
+        ...(item.availableDays ? { availableDays: item.availableDays } : {}),
       };
+      // Only ever fills a gap: a dish's own photo always wins.
+      if (item.photoFrom && !row?.photoMediaId) {
+        const borrowed = photoOfDish.get(normaliseName(item.photoFrom));
+        if (borrowed) data.photoMediaId = borrowed;
+        else plan.warnings.push(`"${item.name}": no photo found on "${item.photoFrom}"`);
+      }
       const changes: string[] = [];
       if (row) {
+        if (data.photoMediaId) changes.push("photo");
+        if (
+          data.availableDays &&
+          !sameSet((row.availableDays ?? []).map(String), data.availableDays.map(String))
+        ) {
+          changes.push(
+            `days [${(row.availableDays ?? []).join(",")}] → [${data.availableDays.join(",")}]`,
+          );
+        }
+        if (row.name !== data.name || (row.description ?? null) !== data.description) {
+          plan.staleTranslations.push({ entityType: "item", entityId: row.id });
+        }
         if (row.name !== data.name) changes.push(`name "${row.name}" → "${data.name}"`);
         if ((row.description ?? null) !== data.description) changes.push("description");
         if (row.priceCents !== data.priceCents)
@@ -309,9 +388,11 @@ export function buildPlan(
         if (row.orderIndex !== data.orderIndex) changes.push("order");
         if (!row.isAvailable) changes.push("back on sale");
         if (kind === "revive") changes.push("un-deleted");
+        const clearOffer = options.clearOffers === true && row.offerPriceCents !== null;
+        if (clearOffer) changes.push(`offer ${row.offerPriceCents} ended`);
         // A running offer must stay strictly below the (new) list price, or
         // the items_offer_below_price CHECK rejects the write.
-        if (row.offerPriceCents !== null && row.offerPriceCents >= data.priceCents) {
+        if (!clearOffer && row.offerPriceCents !== null && row.offerPriceCents >= data.priceCents) {
           plan.warnings.push(
             `"${item.name}" has a running offer of ${row.offerPriceCents} cents which is not below ` +
               `the new price of ${data.priceCents} — clear the offer in the dashboard first`,
@@ -397,6 +478,7 @@ const draftSelect = {
   id: true,
   name: true,
   orderIndex: true,
+  photoMediaId: true,
   items: {
     select: {
       id: true,
@@ -412,6 +494,7 @@ const draftSelect = {
       photoMediaId: true,
       offerPriceCents: true,
       deletedAt: true,
+      availableDays: true,
     },
     orderBy: { orderIndex: "asc" },
   },
@@ -443,6 +526,8 @@ async function main(): Promise<void> {
   const doPublish = args.includes("--publish");
   const refreshDraft = args.includes("--refresh-draft");
   const pruneCategories = args.includes("--prune-categories");
+  const hideOrphanCategories = args.includes("--hide-orphan-categories");
+  const clearOffers = args.includes("--clear-offers");
   const modeArg = args.find((a) => a.startsWith("--allergens="))?.split("=")[1] ?? "replace";
   if (modeArg !== "union" && modeArg !== "replace") {
     throw new Error(`--allergens must be "replace" or "union", got "${modeArg}"`);
@@ -545,7 +630,7 @@ async function main(): Promise<void> {
   }
 
   // --- plan ----------------------------------------------------------------
-  const plan = buildPlan(menu, draftCats, mode);
+  const plan = buildPlan(menu, draftCats, mode, { hideOrphanCategories, clearOffers });
   const creates = plan.items.filter((i) => i.kind === "create");
   const revives = plan.items.filter((i) => i.kind === "revive");
   const updates = plan.items.filter((i) => i.kind === "update");
@@ -560,10 +645,17 @@ async function main(): Promise<void> {
   for (const c of plan.orphanCategories)
     console.log(
       `? category "${c.name}" is not in the new menu — ` +
-        (pruneCategories ? "will be DELETED (--prune-categories)" : "left untouched"),
+        (pruneCategories
+          ? "will be DELETED (--prune-categories)"
+          : hideOrphanCategories
+            ? "its dishes will be hidden (--hide-orphan-categories)"
+            : "left untouched"),
     );
   for (const i of creates)
-    console.log(`+ ${i.category} / ${i.newItem.name} — ${i.data.priceCents}c (no photo)`);
+    console.log(
+      `+ ${i.category} / ${i.newItem.name} — ${i.data.priceCents}c` +
+        (i.data.photoMediaId ? ` (photo from ${i.newItem.photoFrom})` : " (no photo)"),
+    );
   for (const i of revives) console.log(`^ ${i.category} / ${i.newItem.name} — revived`);
   for (const i of updates)
     console.log(`~ ${i.category} / ${i.newItem.name}: ${i.changes.join("; ")}`);
@@ -573,7 +665,8 @@ async function main(): Promise<void> {
   console.log(
     `${tag}${newCats.length} new categories, ${renamedCats.length} renamed, ` +
       `${creates.length} new items, ${revives.length} revived, ${updates.length} updated, ` +
-      `${plan.softDeletes.length} soft-deleted`,
+      `${plan.softDeletes.length} soft-deleted, ` +
+      `${plan.staleTranslations.length} rows lose stale translations`,
   );
   const touched =
     newCats.length +
@@ -601,6 +694,7 @@ async function main(): Promise<void> {
             menuVersionId: loaded.draft!.id,
             name: c.newCategory.name,
             orderIndex,
+            ...(c.photoMediaId ? { photoMediaId: c.photoMediaId } : {}),
           },
           select: { id: true },
         });
@@ -618,7 +712,18 @@ async function main(): Promise<void> {
       if (i.draft) {
         await tx.item.update({
           where: { id: i.draft.id },
-          data: { ...i.data, deletedAt: null },
+          data: {
+            ...i.data,
+            deletedAt: null,
+            ...(clearOffers && i.draft.offerPriceCents !== null
+              ? {
+                  offerPriceCents: null,
+                  offerStartsAt: null,
+                  offerEndsAt: null,
+                  offerWeekly: Prisma.DbNull,
+                }
+              : {}),
+          },
         });
       } else {
         const cat = menu.categories.find((c) => c.items.includes(i.newItem))!;
@@ -636,6 +741,15 @@ async function main(): Promise<void> {
     const now = new Date();
     for (const d of plan.softDeletes) {
       await tx.item.update({ where: { id: d.id }, data: { deletedAt: now } });
+    }
+
+    for (const entityType of ["item", "category"] as const) {
+      const entityIds = plan.staleTranslations
+        .filter((t) => t.entityType === entityType)
+        .map((t) => t.entityId);
+      if (entityIds.length > 0) {
+        await tx.translation.deleteMany({ where: { entityType, entityId: { in: entityIds } } });
+      }
     }
 
     if (pruneCategories) {

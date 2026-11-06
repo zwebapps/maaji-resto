@@ -174,3 +174,132 @@ describe("buildPlan", () => {
     expect(buildPlan(menu, draft, "union").warnings).toHaveLength(1);
   });
 });
+
+describe("a card that replaces the whole menu", () => {
+  const dish = (id: string, name: string, over: Record<string, unknown> = {}) => ({
+    id,
+    number: null,
+    name,
+    description: null,
+    priceCents: 100,
+    allergens: [],
+    traces: [],
+    dietary: [],
+    spice: 0,
+    ...over,
+  });
+  const draft = [
+    { id: "wine", name: "Weine", orderIndex: 100, items: [item("Merlot")] },
+    {
+      id: "veg",
+      name: "Gerichte",
+      orderIndex: 200,
+      photoMediaId: "cat-photo",
+      items: [item("Palak Paneer"), item("Thali", { deletedAt: new Date() })],
+    },
+  ];
+
+  it("hides the dishes of categories the card no longer has, only when asked", () => {
+    const menu = {
+      categories: [{ id: "g", name: "Gerichte", items: [dish("a", "Palak Paneer")] }],
+    };
+    expect(buildPlan(menu, draft, "union").softDeletes).toEqual([]);
+    const plan = buildPlan(menu, draft, "union", { hideOrphanCategories: true });
+    expect(plan.softDeletes.map((d) => d.name)).toEqual(["Merlot"]);
+  });
+
+  it("lends a photo to a new dish and category, hidden dishes included", () => {
+    const plan = buildPlan(
+      {
+        categories: [
+          {
+            id: "g",
+            name: "Gerichte",
+            items: [
+              dish("a", "Palak Paneer"),
+              dish("b", "Saag Paneer", { photoFrom: "Palak Paneer" }),
+              dish("c", "Abend-Thali", { photoFrom: "Thali" }),
+            ],
+          },
+          { id: "n", name: "Neu", photoFrom: "Gerichte", items: [] },
+        ],
+      },
+      draft,
+      "union",
+    );
+    const photo = (name: string) =>
+      plan.items.find((i) => i.newItem.name === name)?.data.photoMediaId;
+    expect(photo("Saag Paneer")).toBe("photo-Palak Paneer");
+    expect(photo("Abend-Thali")).toBe("photo-Thali");
+    expect(plan.categories.find((c) => c.newCategory.id === "n")?.photoMediaId).toBe("cat-photo");
+  });
+
+  it("marks a renamed or rewritten row's translations stale, and leaves untouched text alone", () => {
+    const plan = buildPlan(
+      {
+        categories: [
+          {
+            id: "g",
+            name: "Maaji Gerichte",
+            matchNames: ["Gerichte"],
+            items: [dish("a", "Saag Paneer", { matchNames: ["Palak Paneer"] })],
+          },
+        ],
+      },
+      draft,
+      "union",
+    );
+    expect(plan.staleTranslations).toEqual([
+      { entityType: "category", entityId: "veg" },
+      { entityType: "item", entityId: "id-Palak Paneer" },
+    ]);
+  });
+
+  it("ends an inherited offer only when asked", () => {
+    const withOffer = [
+      {
+        id: "veg",
+        name: "Gerichte",
+        orderIndex: 100,
+        items: [item("Pakoras", { offerPriceCents: 490, orderIndex: 100 })],
+      },
+    ];
+    const menu = {
+      categories: [
+        {
+          id: "g",
+          name: "Gerichte",
+          items: [dish("a", "Pakora-Bowl", { matchNames: ["Pakoras"], priceCents: 890 })],
+        },
+      ],
+    };
+    const offered = (p: ReturnType<typeof buildPlan>) => p.items[0]!.changes.join();
+    expect(offered(buildPlan(menu, withOffer, "union"))).not.toContain("offer");
+    expect(offered(buildPlan(menu, withOffer, "union", { clearOffers: true }))).toContain(
+      "offer 490 ended",
+    );
+  });
+
+  it("is a no-op the second time round", () => {
+    const menu = {
+      categories: [
+        {
+          id: "g",
+          name: "Gerichte",
+          items: [dish("a", "Palak Paneer", { availableDays: [0, 1], photoFrom: "Merlot" })],
+        },
+      ],
+    };
+    const once = [
+      {
+        id: "veg",
+        name: "Gerichte",
+        orderIndex: 100,
+        items: [item("Palak Paneer", { availableDays: [0, 1], orderIndex: 100 })],
+      },
+    ];
+    const plan = buildPlan(menu, once, "union", { hideOrphanCategories: true });
+    expect(plan.items).toEqual([]);
+    expect(plan.staleTranslations).toEqual([]);
+  });
+});
