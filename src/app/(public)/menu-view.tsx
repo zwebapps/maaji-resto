@@ -2056,6 +2056,15 @@ function HeroBanner({
       <div className="absolute start-4 top-4 sm:hidden">
         <OpenBadge state={openNow} t={t} locale={locale} onDark />
       </div>
+      {/* The photo disclaimer, centred on the name's line (owner, 2026-11-06).
+          From xl only: below that the name leaves no room, and the sticky
+          bar carries it as a line of its own. */}
+      <p
+        className="absolute bottom-4 left-1/2 hidden h-10 -translate-x-1/2 items-center whitespace-nowrap text-[11px] text-white sm:bottom-5 xl:flex"
+        style={{ textShadow: "0 1px 4px rgba(0,0,0,0.85)" }}
+      >
+        {t.footer.photoDisclaimer}
+      </p>
       <div className="absolute bottom-4 start-4 flex items-center gap-3 sm:bottom-5 sm:start-6 lg:start-12">
         {/* `showName={false}`: the big white serif below IS the name here,
             so the mark contributes the logo only and the venue is not
@@ -2194,7 +2203,7 @@ function StickyBar({
       {/* The disclaimer's line where the row above has no room for it. */}
       <p
         className={`px-4 pb-1 text-center text-[11px] leading-snug opacity-80 ${
-          sideNav && !hero ? "lg:hidden" : ""
+          hero ? "xl:hidden" : sideNav ? "lg:hidden" : ""
         }`}
       >
         {t.footer.photoDisclaimer}
