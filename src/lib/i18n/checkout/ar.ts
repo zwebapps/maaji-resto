@@ -41,12 +41,16 @@ const ar: CheckoutCopy = {
   email: "البريد الإلكتروني (اختياري) — سنرسل إليك الإيصال",
   emailPlaceholder: "you@example.com",
   /* Cash orders: the email code (owner, 2026-11-01). */
+  /** Pickup / delivery: the email is required (owner, 2026-11-15). */
+  emailNeeded: "البريد الإلكتروني — سنرسل لك الإيصال",
   emailRequired: "البريد الإلكتروني — سنرسل لك رمزًا لتأكيده",
   sendCode: "إرسال الرمز",
   resendCode: "إرسال رمز جديد",
   codeSent: "أرسلنا إليك رمزًا من 6 أرقام.",
   codeLabel: "الرمز من البريد الإلكتروني",
   confirmCode: "تأكيد",
+  /** The cash code step's button: right code → the order goes. */
+  confirmAndOrder: "تأكيد وإرسال الطلب",
   emailVerified: "تم تأكيد البريد الإلكتروني",
   codeInvalid: "الرمز غير صحيح. يُرجى التحقق والمحاولة مرة أخرى.",
   codeExpired: "انتهت صلاحية الرمز. يُرجى إرسال رمز جديد.",

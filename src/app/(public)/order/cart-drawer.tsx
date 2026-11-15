@@ -532,11 +532,21 @@ export function CartDrawer({
         : true;
   const payMethod: PayMethod =
     pickedPay === "cash" && !cashOk ? (onlinePayment ? "card" : "paypal") : pickedPay;
-  // Cash pickup / delivery (owner, 2026-11-15): no email code any more —
-  // the order goes in at once and waits for the restaurant to call the
-  // phone number and accept it. Card / PayPal are never held for a call.
+  // Cash pickup / delivery (owner, 2026-11-15): pressing the cash button
+  // mails a 6-digit code to the (required) email; the right code places
+  // the order, which then waits for the restaurant to call the phone
+  // number and accept it. Card / PayPal never see a code or a call.
   const confirmByCall =
     modes.verifyCash === true && payMethod === "cash" && orderType !== "dine_in";
+  const [code, setCode] = useState("");
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const typedEmail = customerEmail.trim().toLowerCase();
+  const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(typedEmail);
+  // The code step stays open only for the address the code went to —
+  // editing the email (or leaving cash) closes it.
+  const codeStepOpen = confirmByCall && codeSentTo !== null && codeSentTo === typedEmail;
   const [street, setStreet] = useState("");
   const [zip, setZip] = useState("");
   const [note, setNote] = useState("");
@@ -741,6 +751,8 @@ export function CartDrawer({
       ? false
       : !customerName.trim() ||
         !customerPhone.trim() ||
+        // Pickup / delivery need an email (owner, 2026-11-15).
+        !emailLooksValid ||
         (orderType === "delivery" &&
           (!street.trim() || !zip.trim() || (hasAreas && !selectedArea)));
   const money = (cents: number): string => formatCents(cents, currency, locale);
@@ -851,7 +863,11 @@ export function CartDrawer({
    * the wallet sheet, so the confirmation screen waits for the charge to
    * resolve (success or failure) before it appears.
    */
-  async function placeOrderOnServer(method: PayMethod, commit = true): Promise<PlacedOrder | null> {
+  async function placeOrderOnServer(
+    method: PayMethod,
+    commit = true,
+    emailToken?: string,
+  ): Promise<PlacedOrder | null> {
     setPlacing(true);
     setError(null);
     try {
@@ -864,6 +880,8 @@ export function CartDrawer({
         customerPhone: orderType === "dine_in" ? undefined : customerPhone.trim(),
         customerEmail: customerEmail.trim() || undefined,
         intendedPayment: method,
+        // Proof of the email code, for a cash pickup / delivery order.
+        emailToken: method === "cash" ? emailToken : undefined,
         // The guest's language, so the order e-mail arrives in it.
         locale,
         address:
@@ -917,7 +935,9 @@ export function CartDrawer({
                         ? t.errVenueClosed
                         : body?.error === "ordering_paused"
                           ? t.errVenuePaused
-                          : t.errGeneric,
+                          : body?.error === "email_unverified"
+                            ? t.verifyFirst
+                            : t.errGeneric,
         );
         return null;
       }
@@ -943,11 +963,83 @@ export function CartDrawer({
     }
   }
 
+  /** Mail a 6-digit code to the typed address (cash pickup / delivery). */
+  async function sendEmailCode(): Promise<void> {
+    if (!emailLooksValid || codeBusy) return;
+    setCodeBusy(true);
+    setCodeError(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/orders/email-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, email: typedEmail, locale }),
+      });
+      if (!res.ok) {
+        setCodeError(res.status === 429 ? t.errRateLimited : t.codeSendFailed);
+        return;
+      }
+      setCode("");
+      setCodeSentTo(typedEmail);
+    } catch {
+      setCodeError(t.errNoConnection);
+    } finally {
+      setCodeBusy(false);
+    }
+  }
+
+  /** Check the typed code; right → place the cash order with its proof. */
+  async function confirmCodeAndOrder(): Promise<void> {
+    const digits = code.replace(/\D/g, "");
+    if (digits.length !== 6 || codeBusy || busy) return;
+    setCodeBusy(true);
+    setCodeError(null);
+    let token: string | null = null;
+    try {
+      const res = await fetch("/api/orders/email-code/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, email: typedEmail, code: digits }),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        emailToken?: string;
+        error?: string;
+      } | null;
+      if (res.ok && body?.emailToken) {
+        token = body.emailToken;
+      } else {
+        setCodeError(
+          body?.error === "expired"
+            ? t.codeExpired
+            : body?.error === "too_many"
+              ? t.codeTooMany
+              : res.status === 429
+                ? t.errRateLimited
+                : t.codeInvalid,
+        );
+      }
+    } catch {
+      setCodeError(t.errNoConnection);
+    } finally {
+      setCodeBusy(false);
+    }
+    if (!token) return;
+    await submitOrder("cash", token);
+    setCodeSentTo(null);
+    setCode("");
+  }
+
   /** The ordinary path: place, then open the payment page (card/PayPal)
    *  or hand over the receipt (cash). */
-  async function submitOrder(method: PayMethod): Promise<void> {
+  async function submitOrder(method: PayMethod, emailToken?: string): Promise<void> {
     setPayMethod(method);
-    const value = await placeOrderOnServer(method);
+    // Cash pickup / delivery: the first press only mails the code; the
+    // order goes once the guest types it in (confirmCodeAndOrder).
+    if (method === "cash" && confirmByCall && !emailToken) {
+      await sendEmailCode();
+      return;
+    }
+    const value = await placeOrderOnServer(method, true, emailToken);
     if (!value) return;
     // Card / PayPal: go straight to the payment page. If that hop fails
     // the confirmation screen below still offers the pay buttons, so
@@ -1458,14 +1550,20 @@ export function CartDrawer({
                     </div>
                   )}
                   <label className="mt-3 block text-sm">
-                    <span className={FIELD_LABEL}>{t.email}</span>
+                    <span className={FIELD_LABEL}>
+                      {orderType === "dine_in" ? t.email : `${t.emailNeeded} *`}
+                    </span>
                     <input
                       type="email"
                       inputMode="email"
                       autoComplete="email"
                       value={customerEmail}
                       maxLength={120}
-                      onChange={(e) => setCustomerEmail(e.target.value)}
+                      required={orderType !== "dine_in"}
+                      onChange={(e) => {
+                        setCustomerEmail(e.target.value);
+                        setCodeError(null);
+                      }}
                       placeholder={t.emailPlaceholder}
                       className={FIELD}
                     />
@@ -1779,18 +1877,80 @@ export function CartDrawer({
                       </div>
                     ) : null}
 
-                    <button
-                      type="button"
-                      disabled={payBlocked}
-                      onClick={() => void submitOrder(payMethod)}
-                      className={"mt-3 " + (payMethod === "cash" ? CTA_PRIMARY : CTA_PAY)}
-                    >
-                      {busy
-                        ? payMethod === "cash"
-                          ? t.placing
-                          : t.opening
-                        : `${payMethod === "cash" ? t.placeOrder : t.pay} · ${money(total)}`}
-                    </button>
+                    {codeStepOpen ? (
+                      /* Cash pickup / delivery, step two: the code went to
+                         the email above; the right code places the order. */
+                      <div className="mt-3 text-sm" aria-live="polite">
+                        <p className={FIELD_LABEL}>
+                          {t.codeSent} <span className="font-semibold">{typedEmail}</span>
+                        </p>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          pattern="[0-9]*"
+                          maxLength={6}
+                          value={code}
+                          aria-label={t.codeLabel}
+                          placeholder="123456"
+                          // The guest just pressed the button that asked for it.
+                          autoFocus
+                          onChange={(e) => {
+                            setCode(e.target.value.replace(/\D/g, "").slice(0, 6));
+                            setCodeError(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              void confirmCodeAndOrder();
+                            }
+                          }}
+                          className={FIELD + " text-center text-lg tracking-[0.4em]"}
+                        />
+                        {codeError ? (
+                          <p role="alert" className="mt-2 text-xs font-medium text-[#b3261e]">
+                            {codeError}
+                          </p>
+                        ) : null}
+                        <button
+                          type="button"
+                          disabled={payBlocked || codeBusy || code.length !== 6}
+                          onClick={() => void confirmCodeAndOrder()}
+                          className={"mt-3 " + CTA_PRIMARY}
+                        >
+                          {codeBusy || busy ? t.placing : `${t.confirmAndOrder} · ${money(total)}`}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void sendEmailCode()}
+                          disabled={codeBusy}
+                          className="mt-2 block w-full text-center text-xs underline underline-offset-2"
+                        >
+                          {t.resendCode}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={payBlocked || codeBusy}
+                        onClick={() => void submitOrder(payMethod)}
+                        className={"mt-3 " + (payMethod === "cash" ? CTA_PRIMARY : CTA_PAY)}
+                      >
+                        {busy || codeBusy
+                          ? payMethod === "cash"
+                            ? t.placing
+                            : t.opening
+                          : `${payMethod === "cash" ? t.placeOrder : t.pay} · ${money(total)}`}
+                      </button>
+                    )}
+                    {!codeStepOpen && codeError ? (
+                      <p
+                        role="alert"
+                        className="mt-2 text-center text-xs font-medium text-[#b3261e]"
+                      >
+                        {codeError}
+                      </p>
+                    ) : null}
                     {/* Card / PayPal leave this page for the provider's: say
                         so up front, and louder while it opens, so nobody
                         closes the tab mid-payment (owner, 2026-10-19). */}

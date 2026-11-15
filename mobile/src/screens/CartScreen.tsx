@@ -16,7 +16,15 @@ import {
 import * as ExpoLinking from "expo-linking";
 import { Ionicons } from "@expo/vector-icons";
 import type { ApiMenu, OrderType, PlacedOrder } from "../api";
-import { payPageUrl, placeOrder, setVoucherArmed, startHostedPayment, verifyPayment } from "../api";
+import {
+  payPageUrl,
+  placeOrder,
+  sendOrderEmailCode,
+  setVoucherArmed,
+  startHostedPayment,
+  verifyOrderEmailCode,
+  verifyPayment,
+} from "../api";
 import type { PlatformPayButtonProps } from "../stripe-module";
 import {
   confirmFakePayment,
@@ -205,10 +213,34 @@ export function CartScreen({
   const payMethod: PayMethod = payOptions.some((o) => o.key === pickedPay)
     ? pickedPay
     : (payOptions[0]?.key ?? pickedPay);
-  // Cash pickup / delivery (owner, 2026-11-15): no email code — the order
-  // goes in at once and the restaurant calls the guest to accept it.
+  // Cash pickup / delivery (owner, 2026-11-15): pressing the cash button
+  // mails a 6-digit code to the (required) email; the right code places
+  // the order, which then waits for the restaurant to call and accept it.
+  // Card / PayPal never see a code or a call.
   const confirmByCall =
     menu.ordering.verifyCash === true && payMethod === "cash" && orderType !== "dine_in";
+  const [code, setCode] = useState("");
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const typedEmail = email.trim().toLowerCase();
+  const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(typedEmail);
+  // Open only for the address the code went to — editing it closes the step.
+  const codeStepOpen = confirmByCall && codeSentTo !== null && codeSentTo === typedEmail;
+
+  async function sendCode(): Promise<void> {
+    if (!emailLooksValid || codeBusy) return;
+    setCodeBusy(true);
+    setCodeError(null);
+    const r = await sendOrderEmailCode(menu.venue.slug, typedEmail, lang);
+    setCodeBusy(false);
+    if (r.ok) {
+      setCode("");
+      setCodeSentTo(typedEmail);
+    } else {
+      setCodeError(r.error === "network" ? t.orderFailed : t.codeSendFailed);
+    }
+  }
 
   const payHint =
     payMethod === "card"
@@ -529,7 +561,7 @@ export function CartScreen({
     closedBlocked ||
     // No tick, no order: see the forfeit rule above.
     (forfeitNeeded && !forfeitOk) ||
-    (needsContact && (!name.trim() || !phone.trim())) ||
+    (needsContact && (!name.trim() || !phone.trim() || !emailLooksValid)) ||
     (orderType === "delivery" &&
       (!street.trim() || zip.trim().length < 3 || (areas.length > 0 && !area) || belowMinimum));
 
@@ -546,6 +578,30 @@ export function CartScreen({
     await auth.loginWithApple();
   }
 
+  /** Check the typed code; right → place the cash order with its proof. */
+  async function confirmCodeAndOrder(): Promise<void> {
+    if (code.length !== 6 || codeBusy || busy) return;
+    setCodeBusy(true);
+    setCodeError(null);
+    const r = await verifyOrderEmailCode(menu.venue.slug, typedEmail, code);
+    setCodeBusy(false);
+    if (!r.ok) {
+      setCodeError(
+        r.error === "expired"
+          ? t.codeExpired
+          : r.error === "too_many"
+            ? t.codeTooMany
+            : r.error === "network"
+              ? t.orderFailed
+              : t.codeInvalid,
+      );
+      return;
+    }
+    await submit({ emailToken: r.token });
+    setCodeSentTo(null);
+    setCode("");
+  }
+
   /**
    * Place the order, then pay it.
    *
@@ -555,9 +611,17 @@ export function CartScreen({
    * branch, the fake provider, the hosted-page fallback, the cancelled
    * and failed exits — is the same code as the ordinary Pay button.
    */
-  async function submit({ wallet = false }: { wallet?: boolean } = {}): Promise<void> {
+  async function submit({
+    wallet = false,
+    emailToken,
+  }: { wallet?: boolean; emailToken?: string } = {}): Promise<void> {
     if (busy) return; // double-tap guard: one in-flight order at a time
     const method: PayMethod = wallet ? "card" : payMethod;
+    // Cash pickup / delivery: the first press only mails the code.
+    if (method === "cash" && confirmByCall && !emailToken) {
+      await sendCode();
+      return;
+    }
     setBusy(true);
     setError(null);
     // The form gives way to the placing panel right now — the basket itself
@@ -575,6 +639,8 @@ export function CartScreen({
         customerPhone: needsContact ? phone.trim() : undefined,
         customerEmail: email.trim() || undefined,
         intendedPayment: method,
+        // Proof of the email code, for a cash pickup / delivery order.
+        emailToken: method === "cash" ? emailToken : undefined,
         // The app's language, so the order e-mail arrives in it.
         locale: lang,
         // Only ever true when the account really holds an armed voucher —
@@ -605,6 +671,7 @@ export function CartScreen({
         outside_delivery_area: t.outsideArea,
         below_delivery_minimum: t.belowMin,
         unknown_items: t.menuChanged,
+        email_unverified: t.verifyFirst,
       };
       setError(messages[result.error] ?? t.orderFailed);
       // Stale ids from a republished menu: re-anchor the cart so the
@@ -1001,12 +1068,16 @@ export function CartScreen({
                     </>
                   )}
                   <Field
-                    label={t.receiptEmail}
+                    label={needsContact ? t.emailNeeded : t.receiptEmail}
                     value={email}
-                    onChange={setEmail}
+                    onChange={(v) => {
+                      setEmail(v);
+                      setCodeError(null);
+                    }}
                     placeholder="name@example.com"
                     keyboardType="email-address"
                     hint={t.receiptEmailHint}
+                    required={needsContact}
                   />
                   {confirmByCall ? (
                     <Text style={[styles.fieldLabel, { textTransform: "none" }]}>{t.callNote}</Text>
@@ -1444,31 +1515,69 @@ export function CartScreen({
               {error ? <Text style={styles.error}>{error}</Text> : null}
               {/* Tablet: the one call to action, alone and centred —
                   not a bar across the whole screen. */}
+              {codeStepOpen ? (
+                <View style={{ gap: 8, marginTop: 12 }} accessibilityLiveRegion="polite">
+                  <Text style={[styles.fieldLabel, { textTransform: "none" }]}>
+                    {t.codeSent} {typedEmail}
+                  </Text>
+                  <TextInput
+                    value={code}
+                    onChangeText={(v) => {
+                      setCode(v.replace(/\D/g, "").slice(0, 6));
+                      setCodeError(null);
+                    }}
+                    placeholder="123456"
+                    placeholderTextColor={colors.inkSoft}
+                    keyboardType="number-pad"
+                    textContentType="oneTimeCode"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    autoFocus
+                    accessibilityLabel={t.codeLabel}
+                    onSubmitEditing={() => void confirmCodeAndOrder()}
+                    style={[styles.giftInput, { letterSpacing: 6, textAlign: "center" }]}
+                  />
+                  <Pressable
+                    onPress={() => void sendCode()}
+                    disabled={codeBusy}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.codeLink}>{t.resendCode}</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              {codeError ? (
+                <Text accessibilityRole="alert" style={styles.codeErr}>
+                  {codeError}
+                </Text>
+              ) : null}
               <Action style={wide ? { marginTop: 18 } : undefined}>
                 <PrimaryButton
                   label={
-                    coveredByReward
-                      ? fill(t.cartPlaceWithReward, {
-                          total: money(0, menu.venue.currency),
-                        })
-                      : // The card settles the whole bill: the server marks
-                        // the order paid on placement, so this button
-                        // PLACES rather than pays and no sheet follows.
-                        coveredByGiftCard
-                        ? t.cartPlaceWithGiftCard
-                        : payMethod === "cash"
-                          ? `${t.placeOrder} · ${money(chargedTotal, menu.venue.currency)}`
-                          : giftCode !== ""
-                            ? fill(t.cartPayRemaining, {
-                                total: money(chargedTotal, menu.venue.currency),
-                              })
-                            : `${t.payNow} ${money(chargedTotal, menu.venue.currency)}`
+                    codeStepOpen
+                      ? `${t.confirmAndOrder} · ${money(chargedTotal, menu.venue.currency)}`
+                      : coveredByReward
+                        ? fill(t.cartPlaceWithReward, {
+                            total: money(0, menu.venue.currency),
+                          })
+                        : // The card settles the whole bill: the server marks
+                          // the order paid on placement, so this button
+                          // PLACES rather than pays and no sheet follows.
+                          coveredByGiftCard
+                          ? t.cartPlaceWithGiftCard
+                          : payMethod === "cash"
+                            ? `${t.placeOrder} · ${money(chargedTotal, menu.venue.currency)}`
+                            : giftCode !== ""
+                              ? fill(t.cartPayRemaining, {
+                                  total: money(chargedTotal, menu.venue.currency),
+                                })
+                              : `${t.payNow} ${money(chargedTotal, menu.venue.currency)}`
                   }
                   busyLabel={paying ? t.openingPayment : undefined}
                   tone="red"
-                  onPress={() => void submit()}
-                  disabled={missing}
-                  busy={busy}
+                  onPress={() => void (codeStepOpen ? confirmCodeAndOrder() : submit())}
+                  disabled={missing || (codeStepOpen && code.length !== 6)}
+                  busy={busy || codeBusy}
                 />
               </Action>
               {/* Name the instrument that actually covered the bill. A
@@ -1911,6 +2020,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.red,
   },
   giftApplyText: { color: colors.onRed, ...fonts.bodyBold, fontSize: 13.5 },
+  codeErr: { color: colors.danger, ...fonts.body, fontSize: 13, marginTop: 8 },
+  codeLink: {
+    color: colors.inkSoft,
+    ...fonts.bodySemi,
+    fontSize: 12.5,
+    textDecorationLine: "underline",
+  },
   // The one warning on this screen a guest can lose money by ignoring,
   // so it gets the danger tint rather than the quiet gold of a hint.
   forfeitBox: {

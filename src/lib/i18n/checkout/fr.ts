@@ -39,12 +39,16 @@ const fr: CheckoutCopy = {
   email: "E-mail (facultatif) — nous vous envoyons votre reçu",
   emailPlaceholder: "vous@exemple.com",
   /* Cash orders: the email code (owner, 2026-11-01). */
+  /** Pickup / delivery: the email is required (owner, 2026-11-15). */
+  emailNeeded: "E-mail — nous vous envoyons le reçu",
   emailRequired: "E-mail — nous vous envoyons un code de confirmation",
   sendCode: "Envoyer le code",
   resendCode: "Envoyer un nouveau code",
   codeSent: "Nous vous avons envoyé un code à 6 chiffres.",
   codeLabel: "Code reçu par e-mail",
   confirmCode: "Confirmer",
+  /** The cash code step's button: right code → the order goes. */
+  confirmAndOrder: "Confirmer et commander",
   emailVerified: "E-mail confirmé",
   codeInvalid: "Ce code n'est pas correct. Vérifiez-le et réessayez.",
   codeExpired: "Le code a expiré. Envoyez-en un nouveau.",

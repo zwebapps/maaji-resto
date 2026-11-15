@@ -60,12 +60,16 @@ const en = {
   email: "Email (optional) — we'll send your receipt",
   emailPlaceholder: "you@example.com",
   /* Cash orders: the email code (owner, 2026-11-01). */
+  /** Pickup / delivery: the email is required (owner, 2026-11-15). */
+  emailNeeded: "Email — we'll send your receipt",
   emailRequired: "Email — we'll send you a code to confirm it",
   sendCode: "Send code",
   resendCode: "Send a new code",
   codeSent: "We've emailed you a 6-digit code.",
   codeLabel: "Code from the email",
   confirmCode: "Confirm",
+  /** The cash code step's button: right code → the order goes. */
+  confirmAndOrder: "Confirm & place order",
   emailVerified: "Email confirmed",
   codeInvalid: "That code isn't right. Please check it and try again.",
   codeExpired: "The code has expired. Please send a new one.",

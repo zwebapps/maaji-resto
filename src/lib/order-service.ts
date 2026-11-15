@@ -1,3 +1,4 @@
+import { checkOrderEmailToken } from "./order-email-code";
 import { activePauseUntil } from "./ordering-pause";
 import { defaultEtaMinutes, etaApplies, withinAcceptWindow } from "./order-eta";
 import type { Prisma } from "@prisma/client";
@@ -116,9 +117,9 @@ export const placeOrderSchema = z
      */
     intendedPayment: z.enum(["cash", "card", "paypal"]).optional(),
     /**
-     * Retired (2026-11-15): cash orders are confirmed by a phone call now,
-     * not an email code. Still accepted — and ignored — so older app
-     * builds that send it keep working.
+     * Proof the guest verified `customerEmail` with the mailed code
+     * (`src/lib/order-email-code.ts`). Required for cash pickup / delivery
+     * while the venue's `verifyCash` switch is on; ignored otherwise.
      */
     emailToken: z.string().max(1000).optional(),
     /** The language the guest is using ("de", "en", …). Unknown codes are
@@ -252,7 +253,8 @@ export type PlaceOrderResult =
         | "invalid_time"
         | "venue_closed"
         | "venue_paused"
-        | "cash_not_available";
+        | "cash_not_available"
+        | "email_unverified";
     };
 
 /** "app" — the restaurant's phone app; "web" — the website. */
@@ -329,14 +331,21 @@ export async function placeOrder(
     ) {
       return { ok: false, error: "cash_not_available" as const };
     }
-    // Cash pickup / delivery (owner, 2026-11-15): staff call the guest's
-    // phone number and accept the order before it counts — it is never
-    // accepted automatically. No email code any more; card / PayPal skip
-    // the call, and so does dine-in — the guest is at the table.
+    // Cash pickup / delivery (owner, 2026-11-15): after pressing the cash
+    // button the guest proves their email with a mailed code, then staff
+    // call the phone number and accept the order before it counts — it is
+    // never accepted automatically. Card / PayPal skip both, and so does
+    // dine-in — the guest is at the table.
     const confirmByPhone =
       (input.intendedPayment ?? "cash") === "cash" &&
       orderType !== "dine_in" &&
       mode.verifyCash === true;
+    if (
+      confirmByPhone &&
+      !checkOrderEmailToken(input.emailToken, context.venueId, input.customerEmail)
+    ) {
+      return { ok: false, error: "email_unverified" as const };
+    }
     // The restaurant switched ordering off for now ("stop taking orders"):
     // nothing is accepted until it runs out, a planned order included.
     if (activePauseUntil(parseOrderingConfig(venue.ordering))) {

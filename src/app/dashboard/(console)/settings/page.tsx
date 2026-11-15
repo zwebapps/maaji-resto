@@ -1616,11 +1616,12 @@ export default async function SettingsPage({
           <fieldset className="mt-4 border-t border-ink/10 pt-4">
             <legend className="float-left w-full text-sm font-medium">Confirm cash orders</legend>
             <p className="clear-both pt-1 text-xs text-muted">
-              Cash orders for pickup or delivery are not accepted automatically. They arrive on the
-              order board with an <strong>Accept / Reject</strong> choice: call the guest on the
-              number they gave, then accept it (with the usual − / + time) or reject it — a rejected
-              guest gets an email if they left one. Nothing prints until you accept. Dine-in orders
-              and orders paid by card or PayPal are not affected.
+              Guests paying cash for pickup or delivery get a 6-digit code by email when they press
+              the cash button, and the order goes in once they type it. It is not accepted
+              automatically: it arrives on the order board with <strong>Accept / Reject</strong>—
+              call the guest on the number they gave, then accept it (with the usual − / + time) or
+              reject it, and a rejected guest gets an email. Nothing prints until you accept.
+              Dine-in orders and orders paid by card or PayPal are not affected.
             </p>
             <label className="mt-3 flex items-center gap-2 text-sm">
               <input
@@ -1629,7 +1630,7 @@ export default async function SettingsPage({
                 defaultChecked={ordering.config.verifyCash}
                 className="accent-orange"
               />
-              <span>Call the guest to confirm cash orders before accepting them</span>
+              <span>Email code + confirmation call for cash orders</span>
             </label>
           </fieldset>
 

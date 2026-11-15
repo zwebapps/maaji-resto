@@ -160,16 +160,23 @@ describe.runIf(env.EMAIL_TRANSPORT === "mailhog")(
       expect(await verifyOrderEmailCode(fx, email, code)).toEqual({ ok: false, error: "too_many" });
     });
 
-    it("a cash pickup order needs no code, waits for the call; accepting starts it", async () => {
+    it("a cash pickup order needs the token, then waits for the call; accepting starts it", async () => {
       const fx = await fixture(true);
       const email = `order-${randomUUID()}@ex.com`;
-      // No email code any more (owner, 2026-11-15): the order goes in at
-      // once, and an old app's leftover token changes nothing.
-      const placed = await placeOrder(fx, pickup(fx, email));
-      if (!placed.ok) throw new Error(`order failed: ${placed.error}`);
+      expect(await placeOrder(fx, pickup(fx, email))).toEqual({
+        ok: false,
+        error: "email_unverified",
+      });
+      // A token for another address does not stand in.
       expect(
-        (await placeOrder(fx, pickup(fx, email, signOrderEmailToken(fx.venueId, "x@ex.com")))).ok,
-      ).toBe(true);
+        await placeOrder(fx, pickup(fx, email, signOrderEmailToken(fx.venueId, "x@ex.com"))),
+      ).toEqual({ ok: false, error: "email_unverified" });
+
+      const placed = await placeOrder(
+        fx,
+        pickup(fx, email, signOrderEmailToken(fx.venueId, email)),
+      );
+      if (!placed.ok) throw new Error(`order failed: ${placed.error}`);
       const pending = await asTenant(fx.tenantId, (tx) =>
         tx.order.findFirstOrThrow({ where: { id: placed.value.orderId } }),
       );
@@ -196,7 +203,10 @@ describe.runIf(env.EMAIL_TRANSPORT === "mailhog")(
     it("rejecting cancels the order and emails the guest", async () => {
       const fx = await fixture(true);
       const email = `reject-${randomUUID()}@ex.com`;
-      const placed = await placeOrder(fx, pickup(fx, email));
+      const placed = await placeOrder(
+        fx,
+        pickup(fx, email, signOrderEmailToken(fx.venueId, email)),
+      );
       if (!placed.ok) throw new Error(`order failed: ${placed.error}`);
 
       expect(await rejectCashOrder(fx.userId, placed.value.orderId)).toEqual({ ok: true });
@@ -229,7 +239,7 @@ describe.runIf(env.EMAIL_TRANSPORT === "mailhog")(
       );
       expect(row.needsConfirmation).toBe(false);
 
-      // Card / PayPal never wait for a call, switch on or not.
+      // Card / PayPal need no code and never wait for a call, switch on or not.
       const on = await fixture(true);
       const card = await placeOrder(on, {
         ...pickup(on, `card-${randomUUID()}@ex.com`),
