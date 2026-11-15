@@ -157,17 +157,15 @@ export default async function KitchenPage(): Promise<React.ReactElement> {
                 <li
                   key={order.id}
                   data-order-id={order.id}
+                  // Same card as every order (owner, 2026-11-15); a cash
+                  // order waiting for its call says so in one line.
                   className={`flex flex-col rounded-lg p-5 ${
-                    awaitingConfirmation(order)
-                      ? "border-2 border-red-500 bg-red-500/10"
-                      : scheduled
-                        ? SCHEDULED_CARD
-                        : `border-2 ${urgency} bg-white/[0.06]`
+                    scheduled ? SCHEDULED_CARD : `border-2 ${urgency} bg-white/[0.06]`
                   }`}
                 >
                   {awaitingConfirmation(order) ? (
-                    <p className="-mx-5 -mt-5 mb-4 rounded-t-lg bg-red-600 px-5 py-2 text-sm font-semibold uppercase tracking-[0.12em] text-white">
-                      Not confirmed yet — don&apos;t cook
+                    <p className="mb-2 text-sm font-semibold text-amber-300">
+                      Cash · not confirmed yet — call the guest, don&apos;t cook
                     </p>
                   ) : null}
                   <div className="flex items-baseline justify-between gap-3">

@@ -316,17 +316,16 @@ export default async function OrdersPage({
             {open.map((order) => (
               <li
                 key={order.id}
+                // A cash order waiting for its call wears the same card as
+                // every other order (owner, 2026-11-15); only the one line
+                // below and its Accept / Reject buttons set it apart.
                 className={`flex flex-col px-5 py-4 ${
-                  awaitingConfirmation(order)
-                    ? "border-2 border-[#b3261e] bg-[#fdecea]"
-                    : isScheduled(order)
-                      ? SCHEDULED_CARD
-                      : "border-2 border-orange/60 bg-card"
+                  isScheduled(order) ? SCHEDULED_CARD : "border-2 border-orange/60 bg-card"
                 }`}
               >
                 {awaitingConfirmation(order) ? (
-                  <p className="-mx-5 -mt-4 mb-3 bg-[#b3261e] px-5 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-white">
-                    Waiting for confirmation — call the guest
+                  <p className="mb-1 text-xs font-medium text-orange-dark">
+                    Cash · call the guest to confirm, then accept
                   </p>
                 ) : null}
                 {(() => {
