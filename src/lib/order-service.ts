@@ -871,6 +871,12 @@ export interface ReceiptOrder extends OrderFulfilment {
     /** Optional: the emails' header banner + band colour (Settings → branding). */
     bannerKey?: string | null;
     primaryColor?: string | null;
+    /** The menu's theme choices, so the guest's pay page looks like the
+     *  menu (Settings → Appearance). Absent = the default theme. */
+    theme?: string | null;
+    texture?: string | null;
+    backdrop?: string | null;
+    headingColor?: string | null;
     defaultLocale: string;
   };
   items: { name: string; priceCents: number; quantity: number }[];
@@ -926,6 +932,10 @@ export async function getOrderForReceipt(
       logoKey?: unknown;
       bannerKey?: unknown;
       primaryColor?: unknown;
+      theme?: unknown;
+      texture?: unknown;
+      backdrop?: unknown;
+      headingColor?: unknown;
     } | null;
     const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
     return {
@@ -946,6 +956,10 @@ export async function getOrderForReceipt(
         logoKey: str(branding?.logoKey),
         bannerKey: str(branding?.bannerKey),
         primaryColor: str(branding?.primaryColor),
+        theme: str(branding?.theme),
+        texture: str(branding?.texture),
+        backdrop: str(branding?.backdrop),
+        headingColor: str(branding?.headingColor),
         defaultLocale: order.venue.defaultLocale,
       },
     };

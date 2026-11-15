@@ -12,11 +12,14 @@ export function AutoReceipt({
   href,
   filename,
   label,
+  className,
 }: {
   href: string;
   filename: string;
   /** Already localised by the page — this component holds no copy. */
   label: string;
+  /** The visible button's look, from the page (pay-ui.ts). */
+  className: string;
 }) {
   const ref = useRef<HTMLAnchorElement>(null);
   useEffect(() => {
@@ -26,11 +29,7 @@ export function AutoReceipt({
   return (
     <>
       <a ref={ref} href={href} download={filename} className="hidden" aria-hidden="true" />
-      <a
-        href={href}
-        download={filename}
-        className="mt-3 inline-block text-sm text-orange-dark underline underline-offset-2"
-      >
+      <a href={href} download={filename} className={className}>
         {label}
       </a>
     </>

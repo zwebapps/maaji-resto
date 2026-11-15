@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { MessagePopup } from "@/components/message-popup";
+import { CTA_PAYPAL } from "./pay-ui";
 
 /** The three strings this button says, resolved for the guest's language
  *  by `page.tsx` (P7-16: a client component never imports a five-locale
@@ -28,7 +29,7 @@ export function PayPalButton({
   const [state, setState] = useState<"idle" | "starting" | "error">("idle");
 
   return (
-    <div className="mt-4">
+    <div>
       <button
         type="button"
         disabled={state === "starting"}
@@ -55,7 +56,7 @@ export function PayPalButton({
             setState("error");
           }
         }}
-        className="block w-full border-2 border-[#003087] bg-[#ffc439] px-4 py-3.5 text-center text-sm font-bold uppercase tracking-[0.18em] rtl:normal-case rtl:tracking-normal text-[#003087] transition hover:opacity-90 active:scale-[0.985] disabled:opacity-60"
+        className={CTA_PAYPAL}
       >
         {state === "starting" ? labels.opening : labels.pay}
       </button>

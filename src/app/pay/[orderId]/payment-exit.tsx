@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CTA_DANGER, CTA_LINK, CTA_PAY, CTA_SECONDARY, SOFT_TEXT } from "./pay-ui";
 
 /** Words for the dialog, resolved for the guest's language by `page.tsx`
  *  (a client component never imports the whole catalogue). */
@@ -95,35 +96,28 @@ export function PaymentExit({
     setBusy(null);
   }
 
-  const button =
-    "block w-full px-4 py-3.5 text-center text-sm font-semibold transition disabled:opacity-60";
-
   return (
     <>
-      <button
-        type="button"
-        onClick={() => ref.current?.showModal()}
-        className="mt-6 text-sm text-orange-dark underline underline-offset-2"
-      >
+      <button type="button" onClick={() => ref.current?.showModal()} className={CTA_LINK}>
         {labels.otherOptions}
       </button>
       <dialog
         ref={ref}
         aria-labelledby="payment-exit-title"
-        className="m-auto w-[min(92vw,26rem)] border border-ink/15 bg-cream p-0 text-ink backdrop:bg-black/50"
+        className="m-auto w-[min(92vw,26rem)] rounded-2xl border border-[var(--menu-surface-text,var(--menu-text))]/10 bg-[var(--menu-surface)] p-0 text-[var(--menu-surface-text,var(--menu-text))] shadow-[0_24px_60px_-30px_rgba(0,0,0,0.6)] backdrop:bg-black/55"
       >
         <div className="p-6">
           <h2 id="payment-exit-title" className="font-serif text-2xl">
             {labels.title}
           </h2>
-          <p className="mt-2 text-sm text-muted">{labels.body}</p>
+          <p className={`mt-2 text-sm ${SOFT_TEXT}`}>{labels.body}</p>
           <div className="mt-5 space-y-3">
             {cardAvailable ? (
               <button
                 type="button"
                 disabled={busy !== null}
                 onClick={() => void act("card")}
-                className={`${button} bg-orange text-card hover:bg-orange-dark`}
+                className={CTA_PAY}
               >
                 {busy === "card" ? labels.working : labels.tryCard}
               </button>
@@ -131,9 +125,7 @@ export function PaymentExit({
             {cardAvailable ? (
               <p
                 role="status"
-                className={
-                  "text-center text-xs " + (busy === "card" ? "font-semibold" : "text-muted")
-                }
+                className={"text-center text-xs " + (busy === "card" ? "font-semibold" : SOFT_TEXT)}
               >
                 {labels.keepWindowOpen}
               </p>
@@ -143,20 +135,20 @@ export function PaymentExit({
                 type="button"
                 disabled={busy !== null}
                 onClick={() => void act("cash")}
-                className={`${button} border-2 border-[#3f7030] text-[#3f7030] hover:bg-[#3f7030]/10`}
+                className={CTA_SECONDARY}
               >
                 {busy === "cash" ? labels.working : labels.payCash}
               </button>
             ) : null}
             {askCancel ? (
-              <div className="border border-[#b3261e]/40 p-3">
+              <div className="rounded-xl border border-[var(--menu-danger)]/40 p-3">
                 <p className="text-sm">{labels.cancelConfirm}</p>
                 <div className="mt-3 flex gap-2">
                   <button
                     type="button"
                     disabled={busy !== null}
                     onClick={() => void act("cancel")}
-                    className={`${button} bg-[#b3261e] text-white hover:bg-[#8f1e18]`}
+                    className={CTA_DANGER}
                   >
                     {busy === "cancel" ? labels.working : labels.cancel}
                   </button>
@@ -164,7 +156,7 @@ export function PaymentExit({
                     type="button"
                     disabled={busy !== null}
                     onClick={() => setAskCancel(false)}
-                    className={`${button} border border-ink/25 text-ink`}
+                    className={CTA_SECONDARY}
                   >
                     {labels.close}
                   </button>
@@ -175,22 +167,18 @@ export function PaymentExit({
                 type="button"
                 disabled={busy !== null}
                 onClick={() => setAskCancel(true)}
-                className={`${button} border border-[#b3261e]/60 text-[#b3261e] hover:bg-[#b3261e]/10`}
+                className={CTA_DANGER}
               >
                 {labels.cancel}
               </button>
             )}
           </div>
           {message ? (
-            <p role="alert" className="mt-4 text-sm text-[#b3261e]">
+            <p role="alert" className="mt-4 text-sm text-[var(--menu-danger)]">
               {message}
             </p>
           ) : null}
-          <button
-            type="button"
-            onClick={() => ref.current?.close()}
-            className="mt-5 w-full text-center text-sm text-muted underline underline-offset-2"
-          >
+          <button type="button" onClick={() => ref.current?.close()} className={`mt-4 ${CTA_LINK}`}>
             {labels.close}
           </button>
         </div>

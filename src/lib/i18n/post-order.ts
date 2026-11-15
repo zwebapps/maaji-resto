@@ -263,7 +263,7 @@ const de: PostOrderCopy = {
   autoRefresh: "Diese Seite aktualisiert sich automatisch alle 15 Sekunden.",
   backToMenu: "Zur Speisekarte",
   cashCancel: "Bestellung stornieren",
-  cashCancelUntil: "Du kannst diese Bestellung bis {time} Uhr stornieren.",
+  cashCancelUntil: "Sie können diese Bestellung bis {time} Uhr stornieren.",
   cashCancelConfirm: "Ja, Bestellung stornieren",
   cashCancelClosed:
     "Zu spät zum Stornieren — das Restaurant ist schon dabei. Bitte ruf an, wenn etwas nicht stimmt.",
@@ -288,7 +288,7 @@ const de: PostOrderCopy = {
   payFailed: "Die Zahlung ist nicht durchgegangen — bitte erneut versuchen.",
   exitTitle: "Zahlung nicht abgeschlossen",
   exitBody:
-    "Deine Bestellung ist nicht bezahlt, daher hat die Küche sie noch nicht erhalten. Was möchtest du tun?",
+    "Ihre Bestellung ist nicht bezahlt, daher hat die Küche sie noch nicht erhalten. Was möchten Sie tun?",
   exitTryCard: "Kartenzahlung erneut versuchen",
   exitKeepWindowOpen:
     "Sie werden zur sicheren Zahlungsseite weitergeleitet. Bitte schließen Sie dieses Fenster nicht, bis die Zahlung bestätigt ist.",
@@ -298,13 +298,14 @@ const de: PostOrderCopy = {
     "Diese Bestellung stornieren? Sie ist nicht bezahlt und es wird nichts abgebucht.",
   exitWorking: "Einen Moment…",
   exitCashDoneTitle: "Bestellung an die Küche gesendet",
-  exitCashDoneBody: "Du bezahlst bar im Restaurant.",
+  exitCashDoneBody: "Sie bezahlen bar im Restaurant.",
   exitCancelledTitle: "Bestellung storniert",
   exitCancelledBody: "Es wurde nichts abgebucht.",
   exitStillProcessing:
     "Die Zahlung wird noch verarbeitet. Bitte warte kurz und lade die Seite neu.",
   exitAlreadyPaid: "Diese Bestellung ist bereits bezahlt.",
-  exitFailed: "Das hat nicht geklappt. Bitte versuche es erneut oder wende dich an das Restaurant.",
+  exitFailed:
+    "Das hat nicht geklappt. Bitte versuchen Sie es erneut oder wenden Sie sich an das Restaurant.",
   exitClose: "Schließen",
   exitOtherOptions: "Andere Möglichkeiten",
   testPayPage: "Test-Zahlungsseite — in der Produktion übernimmt Stripe diesen Schritt",

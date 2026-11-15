@@ -14,6 +14,9 @@ import { getPublicVenueAccess } from "@/lib/order-service";
 import { VAT_RATE_LABEL, vatFromGross } from "@/lib/vat";
 import { postOrderCopy } from "@/lib/i18n/post-order";
 import { dirFor, isLocaleCode, uiLocale } from "@/lib/locales";
+import { menuThemeStyle, resolveMenuTheme } from "@/lib/menu-themes";
+import { menuImageUrl } from "@/lib/menu-images";
+import { CTA_LINK, CTA_PRIMARY, CTA_SECONDARY, SOFT_TEXT } from "./pay-ui";
 
 /**
  * Local payment page. With the FAKE provider this is where the guest
@@ -79,160 +82,280 @@ export default async function PayPage({
   const cancelled = exit?.status === "cancelled";
   const switchedToCash = !paid && !cancelled && order.paymentStatus === "none";
 
+  // The menu's own look (owner, 2026-11-15): the venue's theme variables,
+  // its logo-and-name bar, and the cart's rounded buttons.
+  const v = order.venue;
+  const themeStyle = menuThemeStyle(v.theme, v.texture, v.backdrop, v.headingColor);
+  const nameStyled = Boolean(resolveMenuTheme(v.theme).vars.nameColor);
+  const logoSrc = v.logoKey
+    ? menuImageUrl(v.logoKey, order.venueId ?? orderId, 96)
+    : "/brand/logo-192.png";
+  const menuHref = "/";
+  const receiptHref = `/api/orders/${encodeURIComponent(orderId)}/receipt?token=${encodeURIComponent(token)}&locale=${locale}`;
+  const trackHref = `/order-status/${encodeURIComponent(orderId)}?token=${encodeURIComponent(token)}&locale=${locale}`;
+  // The copy carries its own tick ("Bezahlt ✓"); the badge draws one.
+  const paidTitle = t.paid.replace(/\s*✓\s*$/, "");
+
   return (
-    <main
+    <div
+      style={themeStyle}
       dir={dirFor(locale)}
-      className="mx-auto flex min-h-screen max-w-md flex-col justify-center bg-cream px-6 py-16 text-ink"
+      className="menu-theme flex min-h-screen flex-col bg-[var(--menu-bg)] text-[var(--menu-text)]"
     >
-      {/* Arabic is cursive — `uppercase`/`letter-spacing` only damage it. */}
-      <p className="text-xs uppercase tracking-[0.28em] rtl:normal-case rtl:tracking-normal text-gold-dark">
-        {order.venue.name}
-      </p>
-      <h1 className="mt-2 font-serif text-3xl leading-tight">{t.orderHeading(orderNo)}</h1>
-
-      <ul className="mt-6 divide-y divide-ink/10 border border-ink/15 bg-card">
-        {order.items.map((item, i) => (
-          <li key={i} className="flex items-baseline justify-between gap-3 px-4 py-2.5 text-sm">
-            <span>
-              {item.quantity}× {item.name}
-            </span>
-            <span className="tabular-nums">{money(item.priceCents * item.quantity)}</span>
-          </li>
-        ))}
-        {/* German gross pricing: VAT is contained in the total, shown as a
-            split so the page doubles as the guest's receipt. */}
-        <li className="flex items-baseline justify-between gap-3 px-4 pt-2.5 text-xs text-muted">
-          <span>{t.net}</span>
-          <span className="tabular-nums">{money(order.totalCents - vatCents)}</span>
-        </li>
-        <li className="flex items-baseline justify-between gap-3 px-4 pb-1 text-xs text-muted">
-          <span>{t.vatLine(VAT_RATE_LABEL)}</span>
-          <span className="tabular-nums">{money(vatCents)}</span>
-        </li>
-        <li className="flex items-baseline justify-between gap-3 px-4 py-3 text-sm font-semibold">
-          <span className="uppercase tracking-[0.16em] rtl:normal-case rtl:tracking-normal">
-            {t.total}
-          </span>
-          <span className="tabular-nums">{money(order.totalCents)}</span>
-        </li>
-      </ul>
-
-      {paid ? (
-        <div className="mt-6 border border-[#3f7030]/40 bg-[#3f7030]/10 px-4 py-4 text-center">
-          <p className="font-serif text-2xl text-[#3f7030]">{t.paid}</p>
-          <AutoReceipt
-            href={`/api/orders/${encodeURIComponent(orderId)}/receipt?token=${encodeURIComponent(token)}&locale=${locale}`}
-            filename={`${t.receiptFilePrefix}-${orderNo}.pdf`}
-            label={t.downloadReceipt}
-          />
-          <p className="mt-1 text-sm text-muted">{t.showAtRestaurant}</p>
-          {appReturnUrl ? (
-            <a
-              href={appReturnUrl}
-              className="mt-4 block w-full bg-orange px-4 py-3.5 text-center text-sm font-semibold uppercase tracking-[0.18em] rtl:normal-case rtl:tracking-normal text-card transition hover:bg-orange-dark"
-            >
-              {t.backToApp}
-            </a>
-          ) : (
-            <a
-              href={`/`}
-              className="mt-4 inline-block text-sm text-orange-dark underline underline-offset-2"
-            >
-              {t.backToMenu}
-            </a>
-          )}
-        </div>
-      ) : cancelled ? (
-        <div className="mt-6 border border-ink/15 bg-card px-4 py-4 text-center">
-          <p className="font-serif text-2xl">{t.exitCancelledTitle}</p>
-          <p className="mt-1 text-sm text-muted">{t.exitCancelledBody}</p>
+      {/* Same bar as the menu: logo + restaurant name, small, and a way back. */}
+      <header className="border-b border-[var(--menu-text)]/10 bg-[var(--menu-bg)]/95">
+        <div className="flex min-h-[3.5rem] items-center gap-2.5 px-4 py-3 sm:px-6 lg:px-12">
           <a
-            href={`/`}
-            className="mt-4 inline-block text-sm text-orange-dark underline underline-offset-2"
+            href={menuHref}
+            className="flex min-w-0 items-center gap-2.5 rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[color:var(--menu-text)]"
           >
-            {t.backToMenu}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={logoSrc}
+              alt=""
+              width={40}
+              height={40}
+              className={`h-10 w-10 shrink-0 ${v.logoKey ? "rounded-full object-cover" : ""}`}
+            />
+            <span
+              className={`block min-w-0 truncate font-serif text-base leading-tight sm:text-lg ${
+                nameStyled ? "font-semibold uppercase" : "italic"
+              }`}
+              style={{
+                color: "var(--menu-name, var(--menu-text))",
+                letterSpacing: nameStyled ? "0.08em" : undefined,
+              }}
+            >
+              {order.venue.name}
+            </span>
           </a>
         </div>
-      ) : switchedToCash ? (
-        <div className="mt-6 border border-[#3f7030]/40 bg-[#3f7030]/10 px-4 py-4 text-center">
-          <p className="font-serif text-2xl text-[#3f7030]">{t.exitCashDoneTitle}</p>
-          <p className="mt-1 text-sm text-muted">{t.exitCashDoneBody}</p>
-          {appReturnUrl ? (
-            <a
-              href={appReturnUrl}
-              className="mt-4 block w-full bg-orange px-4 py-3.5 text-center text-sm font-semibold uppercase tracking-[0.18em] rtl:normal-case rtl:tracking-normal text-card transition hover:bg-orange-dark"
+      </header>
+
+      <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
+        <div className="w-full max-w-md rounded-2xl border border-[var(--menu-surface-text,var(--menu-text))]/10 bg-[var(--menu-surface)] p-6 text-[var(--menu-surface-text,var(--menu-text))] shadow-[0_24px_60px_-30px_rgba(0,0,0,0.5)] sm:p-7">
+          <h1 className="text-center font-serif text-2xl leading-tight">
+            {t.orderHeading(orderNo)}
+          </h1>
+
+          {/* The order, as a receipt: items, then the VAT split (German
+              gross pricing — VAT is contained in the total). */}
+          <div className="mt-5 rounded-xl bg-[var(--menu-surface-text,var(--menu-text))]/6 px-4 py-3 text-sm">
+            <ul className="space-y-1.5">
+              {order.items.map((item, i) => (
+                <li key={i} className="flex items-baseline gap-2">
+                  <span className="min-w-6 font-bold tabular-nums text-[var(--menu-surface-accent,var(--menu-accent))]">
+                    {item.quantity}×
+                  </span>
+                  <span className="min-w-0 flex-1">{item.name}</span>
+                  <span className="tabular-nums">{money(item.priceCents * item.quantity)}</span>
+                </li>
+              ))}
+            </ul>
+            <div
+              className={`mt-3 space-y-0.5 border-t border-[var(--menu-surface-text,var(--menu-text))]/12 pt-2 text-xs ${SOFT_TEXT}`}
             >
-              {t.backToApp}
-            </a>
-          ) : null}
+              <div className="flex justify-between gap-3">
+                <span>{t.net}</span>
+                <span className="tabular-nums">{money(order.totalCents - vatCents)}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>{t.vatLine(VAT_RATE_LABEL)}</span>
+                <span className="tabular-nums">{money(vatCents)}</span>
+              </div>
+            </div>
+            <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-[var(--menu-surface-text,var(--menu-text))]/12 pt-2 font-semibold">
+              <span className="text-xs uppercase tracking-[0.16em] rtl:normal-case rtl:tracking-normal">
+                {t.total}
+              </span>
+              <span className="text-base tabular-nums">{money(order.totalCents)}</span>
+            </div>
+          </div>
+
+          {paid ? (
+            <section aria-live="polite" className="mt-6 text-center">
+              <StatusBadge tone="positive" icon="check" />
+              <p className="mt-3 font-serif text-2xl text-[var(--menu-positive)]">{paidTitle}</p>
+              <p className={`mt-1 text-sm ${SOFT_TEXT}`}>{t.showAtRestaurant}</p>
+              <div className="mt-5 space-y-2.5">
+                {appReturnUrl ? (
+                  <a href={appReturnUrl} className={CTA_PRIMARY}>
+                    {t.backToApp}
+                  </a>
+                ) : null}
+                <AutoReceipt
+                  href={receiptHref}
+                  filename={`${t.receiptFilePrefix}-${orderNo}.pdf`}
+                  label={t.downloadReceipt}
+                  className={appReturnUrl ? CTA_SECONDARY : CTA_PRIMARY}
+                />
+                <a href={trackHref} className={CTA_SECONDARY}>
+                  {t.trackTitle}
+                </a>
+                {appReturnUrl ? null : (
+                  <a href={menuHref} className={CTA_LINK}>
+                    {t.backToMenu}
+                  </a>
+                )}
+              </div>
+            </section>
+          ) : cancelled ? (
+            <section aria-live="polite" className="mt-6 text-center">
+              <StatusBadge tone="neutral" icon="cross" />
+              <p className="mt-3 font-serif text-2xl">{t.exitCancelledTitle}</p>
+              <p className={`mt-1 text-sm ${SOFT_TEXT}`}>{t.exitCancelledBody}</p>
+              <div className="mt-5">
+                <a href={menuHref} className={CTA_PRIMARY}>
+                  {t.backToMenu}
+                </a>
+              </div>
+            </section>
+          ) : switchedToCash ? (
+            <section aria-live="polite" className="mt-6 text-center">
+              <StatusBadge tone="positive" icon="cash" />
+              <p className="mt-3 font-serif text-2xl text-[var(--menu-positive)]">
+                {t.exitCashDoneTitle}
+              </p>
+              <p className={`mt-1 text-sm ${SOFT_TEXT}`}>{t.exitCashDoneBody}</p>
+              <div className="mt-5 space-y-2.5">
+                {appReturnUrl ? (
+                  <a href={appReturnUrl} className={CTA_PRIMARY}>
+                    {t.backToApp}
+                  </a>
+                ) : null}
+                <a href={trackHref} className={appReturnUrl ? CTA_SECONDARY : CTA_PRIMARY}>
+                  {t.trackTitle}
+                </a>
+                <a href={receiptHref} className={CTA_SECONDARY}>
+                  {t.downloadReceipt}
+                </a>
+                {appReturnUrl ? null : (
+                  <a href={menuHref} className={CTA_LINK}>
+                    {t.backToMenu}
+                  </a>
+                )}
+              </div>
+            </section>
+          ) : !siteActive ? (
+            <section aria-live="polite" className="mt-6 text-center">
+              <StatusBadge tone="neutral" icon="pause" />
+              <p className="mt-3 font-serif text-2xl">{t.paused}</p>
+              <p className={`mt-1 text-sm ${SOFT_TEXT}`}>{t.pausedBody}</p>
+              <div className="mt-5">
+                <a href={menuHref} className={CTA_SECONDARY}>
+                  {t.backToMenu}
+                </a>
+              </div>
+            </section>
+          ) : (
+            <section className="mt-6 space-y-3">
+              {ref ? (
+                <PayButton
+                  orderId={orderId}
+                  token={token}
+                  payRef={ref}
+                  /* P7-16: the button gets WORDS, not a locale — importing the
+                     catalogue from a client component ships all five. */
+                  labels={{
+                    pay: t.payAmount(money(order.totalCents)),
+                    processing: t.processing,
+                    failed: t.payFailed,
+                    testNote: t.testPayPage,
+                  }}
+                />
+              ) : null}
+              {paypalOn ? (
+                <PayPalButton
+                  orderId={orderId}
+                  token={token}
+                  appReturnUrl={appReturnUrl}
+                  labels={{
+                    pay: t.payWithPaypal,
+                    opening: t.openingPaypal,
+                    failed: t.paypalFailed,
+                  }}
+                />
+              ) : null}
+              {!ref && !paypalOn && !exit?.canExit ? (
+                <p className={`text-center text-sm ${SOFT_TEXT}`}>{t.incompleteLink}</p>
+              ) : null}
+              {exit?.canExit ? (
+                <PaymentExit
+                  orderId={orderId}
+                  token={token}
+                  acceptsCash={exit.acceptsCash}
+                  cardAvailable={cardAvailable}
+                  autoOpen={
+                    statusParam === "cancelled" ||
+                    statusParam === "failed" ||
+                    order.paymentStatus === "failed"
+                  }
+                  labels={{
+                    title: t.exitTitle,
+                    body: t.exitBody,
+                    tryCard: t.exitTryCard,
+                    keepWindowOpen: t.exitKeepWindowOpen,
+                    payCash: t.exitPayCash,
+                    cancel: t.exitCancel,
+                    cancelConfirm: t.exitCancelConfirm,
+                    working: t.exitWorking,
+                    stillProcessing: t.exitStillProcessing,
+                    alreadyPaid: t.exitAlreadyPaid,
+                    failed: t.exitFailed,
+                    close: t.exitClose,
+                    otherOptions: t.exitOtherOptions,
+                  }}
+                />
+              ) : null}
+            </section>
+          )}
         </div>
-      ) : !siteActive ? (
-        <div className="mt-6 border border-ink/15 bg-card px-4 py-4 text-center">
-          <p className="font-serif text-2xl">{t.paused}</p>
-          <p className="mt-1 text-sm text-muted">{t.pausedBody}</p>
-        </div>
-      ) : (
-        <>
-          {ref ? (
-            <PayButton
-              orderId={orderId}
-              token={token}
-              payRef={ref}
-              /* P7-16: the button gets WORDS, not a locale — importing the
-                 catalogue from a client component ships all five. */
-              labels={{
-                pay: t.payAmount(money(order.totalCents)),
-                processing: t.processing,
-                failed: t.payFailed,
-                testNote: t.testPayPage,
-              }}
-            />
-          ) : null}
-          {paypalOn ? (
-            <PayPalButton
-              orderId={orderId}
-              token={token}
-              appReturnUrl={appReturnUrl}
-              labels={{
-                pay: t.payWithPaypal,
-                opening: t.openingPaypal,
-                failed: t.paypalFailed,
-              }}
-            />
-          ) : null}
-          {!ref && !paypalOn && !exit?.canExit ? (
-            <p className="mt-6 text-sm text-muted">{t.incompleteLink}</p>
-          ) : null}
-          {exit?.canExit ? (
-            <PaymentExit
-              orderId={orderId}
-              token={token}
-              acceptsCash={exit.acceptsCash}
-              cardAvailable={cardAvailable}
-              autoOpen={
-                statusParam === "cancelled" ||
-                statusParam === "failed" ||
-                order.paymentStatus === "failed"
-              }
-              labels={{
-                title: t.exitTitle,
-                body: t.exitBody,
-                tryCard: t.exitTryCard,
-                keepWindowOpen: t.exitKeepWindowOpen,
-                payCash: t.exitPayCash,
-                cancel: t.exitCancel,
-                cancelConfirm: t.exitCancelConfirm,
-                working: t.exitWorking,
-                stillProcessing: t.exitStillProcessing,
-                alreadyPaid: t.exitAlreadyPaid,
-                failed: t.exitFailed,
-                close: t.exitClose,
-                otherOptions: t.exitOtherOptions,
-              }}
-            />
-          ) : null}
-        </>
-      )}
-    </main>
+      </main>
+    </div>
+  );
+}
+
+/**
+ * The round status mark above each outcome — drawn, not an emoji, so it
+ * takes the theme's colours and reads the same on every platform.
+ */
+function StatusBadge({
+  tone,
+  icon,
+}: {
+  tone: "positive" | "neutral";
+  icon: "check" | "cross" | "cash" | "pause";
+}): React.ReactElement {
+  const color =
+    tone === "positive"
+      ? "var(--menu-positive)"
+      : "var(--menu-surface-text-soft, var(--menu-text-soft))";
+  return (
+    <span
+      aria-hidden="true"
+      className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border-2"
+      style={{ borderColor: color, color }}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        width="28"
+        height="28"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {icon === "check" ? <path d="M5 12.5l4.5 4.5L19 7.5" /> : null}
+        {icon === "cross" ? <path d="M7 7l10 10M17 7L7 17" /> : null}
+        {icon === "pause" ? <path d="M9 6v12M15 6v12" /> : null}
+        {icon === "cash" ? (
+          <>
+            <rect x="3" y="6.5" width="18" height="11" rx="2" />
+            <circle cx="12" cy="12" r="2.6" />
+          </>
+        ) : null}
+      </svg>
+    </span>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { MessagePopup } from "@/components/message-popup";
+import { CTA_PAY, SOFT_TEXT } from "./pay-ui";
 
 /** The four strings this button says, resolved for the guest's language
  *  by `page.tsx` (P7-16: a client component never imports a five-locale
@@ -29,7 +30,7 @@ export function PayButton({
   const [state, setState] = useState<"idle" | "paying" | "error">("idle");
 
   return (
-    <div className="mt-6">
+    <div>
       <button
         type="button"
         disabled={state === "paying"}
@@ -54,12 +55,14 @@ export function PayButton({
             setState("error");
           }
         }}
-        className="block w-full bg-orange px-4 py-3.5 text-center text-sm font-semibold uppercase tracking-[0.18em] rtl:normal-case rtl:tracking-normal text-card transition hover:bg-orange-dark active:scale-[0.985] disabled:opacity-60"
+        className={CTA_PAY}
       >
         {state === "paying" ? labels.processing : labels.pay}
       </button>
       {state === "error" ? <MessagePopup kind="error" text={labels.failed} /> : null}
-      <p className="mt-3 text-center text-[11px] uppercase tracking-[0.2em] rtl:normal-case rtl:tracking-normal text-muted">
+      <p
+        className={`mt-2 text-center text-[11px] uppercase tracking-[0.2em] rtl:normal-case rtl:tracking-normal ${SOFT_TEXT}`}
+      >
         {labels.testNote}
       </p>
     </div>
