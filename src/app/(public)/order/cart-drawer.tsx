@@ -1097,7 +1097,12 @@ export function CartDrawer({
     setPlacedNotice(null);
     // Cash pickup / delivery: the first press only mails the code; the
     // order goes once the guest types it in (confirmCodeAndOrder).
-    if (method === "cash" && confirmByCall && !emailToken) {
+    // Decided from the button TAPPED, not from `confirmByCall`: that one
+    // follows the previously selected method (Card by default), so the
+    // first tap on Cash used to skip the code and the server refused the
+    // order with "email_unverified" (owner, 2026-11-15).
+    const needsCode = method === "cash" && modes.verifyCash === true && orderType !== "dine_in";
+    if (needsCode && !emailToken) {
       await sendEmailCode();
       return;
     }
