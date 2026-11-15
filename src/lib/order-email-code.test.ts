@@ -244,6 +244,22 @@ describe.runIf(env.EMAIL_TRANSPORT === "mailhog")(
       if (switched.ok) expect(switched.orderSeries).toBe("B");
     });
 
+    it("a PAID order asked to switch to cash says 'already paid', not 'confirm your email'", async () => {
+      const fx = await fixture(true);
+      const email = `paidswitch-${randomUUID()}@ex.com`;
+      const placed = await placeOrder(fx, { ...pickup(fx, email), intendedPayment: "card" });
+      if (!placed.ok) throw new Error(`order failed: ${placed.error}`);
+      await asTenant(fx.tenantId, (tx) =>
+        tx.order.updateMany({
+          where: { id: placed.value.orderId },
+          data: { paymentStatus: "paid" },
+        }),
+      );
+      expect(
+        await switchUnpaidOrderToCash(fx.tenantId, placed.value.orderId, placed.value.receiptToken),
+      ).toEqual({ ok: false, error: "already_paid" });
+    });
+
     it("rejecting cancels the order and emails the guest", async () => {
       const fx = await fixture(true);
       const email = `reject-${randomUUID()}@ex.com`;

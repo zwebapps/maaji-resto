@@ -962,6 +962,7 @@ export async function switchUnpaidOrderToCash(
         customerId: true,
         orderChannel: true,
         customerEmail: true,
+        paymentStatus: true,
       },
     });
     if (!order) return null;
@@ -979,9 +980,13 @@ export async function switchUnpaidOrderToCash(
         order.orderType !== "dine_in" && parseOrderingConfig(venue?.ordering).verifyCash === true,
       venueId: order.venueId,
       customerEmail: order.customerEmail,
+      paid: order.paymentStatus === "paid",
     };
   });
   if (looked === null) return { ok: false, error: "not_found" };
+  // Paid already: say so first — before any email-code check, so a stale
+  // tab hears "already paid", not "confirm your email" (owner, 2026-11-15).
+  if (looked.paid) return { ok: false, error: "already_paid" };
   if (!looked.accepts) return { ok: false, error: "cash_not_accepted" };
   if (looked.verify) {
     const { checkOrderEmailToken } = await import("./order-email-code");
