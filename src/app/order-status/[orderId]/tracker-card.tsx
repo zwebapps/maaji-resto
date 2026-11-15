@@ -300,7 +300,7 @@ export function OrderTrackerCard({
               href={reviewUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-3 inline-block rounded-lg border border-[var(--menu-surface-accent,var(--menu-accent))] px-4 py-2.5 text-sm font-semibold text-[var(--menu-surface-accent,var(--menu-accent))] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--menu-surface-accent,var(--menu-accent))]"
+              className="mt-3 inline-block rounded-lg border border-[var(--menu-surface-accent,var(--menu-accent))] px-4 py-2.5 text-sm font-semibold text-[var(--menu-surface-accent,var(--menu-accent))] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--menu-surface-accent,var(--menu-accent))]"
             >
               {t.review.cta}
               <span className="sr-only"> ({t.review.newTab})</span>
@@ -361,7 +361,7 @@ export function OrderTrackerCard({
             12 px underlined line at the foot of the card went unseen. */}
         <Link
           href="/"
-          className="mt-5 flex min-h-12 w-full items-center justify-center rounded-xl bg-[var(--menu-surface-accent,var(--menu-accent))] px-4 py-3 text-base font-semibold text-[var(--menu-text)] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--menu-surface-accent,var(--menu-accent))]"
+          className="mt-5 flex min-h-12 w-full items-center justify-center rounded-xl bg-[var(--menu-surface-accent,var(--menu-accent))] px-4 py-3 text-base font-semibold text-[var(--menu-text)] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--menu-surface-accent,var(--menu-accent))]"
         >
           {t.backToMenu}
         </Link>

@@ -85,7 +85,7 @@ export function DishDescription({
       onClick={() => setOpen(true)}
       aria-haspopup="dialog"
       aria-label={labels.moreAbout}
-      className="mt-0.5 inline-flex items-center gap-0.5 text-xs font-semibold text-[var(--menu-surface-accent,var(--menu-accent))] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--menu-surface-text,var(--menu-text))]"
+      className="mt-0.5 inline-flex items-center gap-0.5 text-xs font-semibold text-[var(--menu-surface-accent,var(--menu-accent))] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--menu-surface-text,var(--menu-text))]"
     >
       {labels.more}
       {/* Directional glyph: mirrored under `dir="rtl"` so it still

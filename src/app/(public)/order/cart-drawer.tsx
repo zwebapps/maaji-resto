@@ -227,7 +227,7 @@ interface CustomerProfile {
 const RTL_TYPE = " rtl:normal-case rtl:tracking-normal";
 
 const FOCUS_RING =
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--menu-surface-text,var(--menu-text))]";
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--menu-surface-text,var(--menu-text))]";
 
 /** Round icon-only control. 1.4.11 is satisfied by the glyph (4.62:1 composited
  *  at worst), not by the wash, and 32px clears the 24px target floor of 2.5.8. */

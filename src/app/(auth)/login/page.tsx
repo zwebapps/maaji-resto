@@ -102,7 +102,7 @@ export default async function LoginPage({
           <Link
             href="/"
             aria-label={`${displayName} — back to the menu`}
-            className="group inline-flex items-center gap-3 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--menu-accent)]"
+            className="group inline-flex items-center gap-3 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[color:var(--menu-accent)]"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={logoSrc} alt="" className="h-11 w-11 rounded-xl object-cover" />

@@ -157,7 +157,7 @@ export function IssueSection({
   const fieldClass =
     "mt-1 w-full rounded-lg border border-[var(--menu-surface-text,var(--menu-text))]/25 bg-[var(--menu-surface)] px-3 py-2 text-sm text-[var(--menu-surface-text,var(--menu-text))] outline-none focus:border-[var(--menu-surface-accent,var(--menu-accent))]";
   const buttonClass =
-    "mt-3 w-full rounded-lg bg-[var(--menu-surface-accent,var(--menu-accent))] px-4 py-3 text-sm font-semibold text-[var(--menu-surface,#fff)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--menu-surface-accent,var(--menu-accent))]";
+    "mt-3 w-full rounded-lg bg-[var(--menu-surface-accent,var(--menu-accent))] px-4 py-3 text-sm font-semibold text-[var(--menu-surface,#fff)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--menu-surface-accent,var(--menu-accent))]";
 
   return (
     <section
@@ -236,7 +236,7 @@ export function IssueSection({
           <p className="mt-4">
             <a
               href={trackingHref(true)}
-              className="inline-block rounded-lg border border-[var(--menu-surface-accent,var(--menu-accent))] px-4 py-2.5 text-sm font-semibold text-[var(--menu-surface-accent,var(--menu-accent))] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--menu-surface-accent,var(--menu-accent))]"
+              className="inline-block rounded-lg border border-[var(--menu-surface-accent,var(--menu-accent))] px-4 py-2.5 text-sm font-semibold text-[var(--menu-surface-accent,var(--menu-accent))] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--menu-surface-accent,var(--menu-accent))]"
             >
               {thread ? t.replyLink : t.reportLink}
             </a>

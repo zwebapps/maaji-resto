@@ -31,13 +31,13 @@ const CELL_FREE =
   "bg-[var(--menu-surface-text,var(--menu-text))]/[0.06] " +
   "hover:bg-[var(--menu-surface-accent,var(--menu-accent))]/25 " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 " +
-  "focus-visible:outline-[var(--menu-surface-accent,var(--menu-accent))]";
+  "focus-visible:outline-[color:var(--menu-surface-accent,var(--menu-accent))]";
 /** The chosen day takes the panel's one dominant fill, like the CTA. */
 const CELL_ON =
   "bg-[var(--menu-surface-accent,var(--menu-accent))] font-semibold " +
   "text-[var(--menu-on-surface-accent,var(--menu-bg))] " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 " +
-  "focus-visible:outline-[var(--menu-surface-accent,var(--menu-accent))]";
+  "focus-visible:outline-[color:var(--menu-surface-accent,var(--menu-accent))]";
 /** Closed, past, or past the booking horizon. Disabled controls are
  *  exempt from the 1.4.3 contrast minimum, which is what buys the fade. */
 const CELL_OFF = "text-[var(--menu-surface-text-soft,var(--menu-text-soft))] opacity-35";

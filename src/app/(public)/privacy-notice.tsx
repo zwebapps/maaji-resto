@@ -90,7 +90,7 @@ function readAck(): "ack" | "new" {
  * onto the critical path.
  */
 const FOCUS_RING =
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--menu-surface-text,var(--menu-text))]";
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--menu-surface-text,var(--menu-text))]";
 
 export function PrivacyNotice({ labels }: { labels: PrivacyLabels }): React.ReactElement | null {
   const state = useSyncExternalStore(subscribe, readAck, () => "ack" as const);
