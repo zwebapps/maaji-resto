@@ -227,6 +227,8 @@ export function CartScreen({
   const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(typedEmail);
   // Open only for the address the code went to — editing it closes the step.
   const codeStepOpen = confirmByCall && codeSentTo !== null && codeSentTo === typedEmail;
+  // The address under verification cannot be edited; leaving cash frees it.
+  const emailLocked = codeStepOpen || (confirmByCall && codeBusy);
 
   async function sendCode(): Promise<void> {
     if (!emailLooksValid || codeBusy) return;
@@ -1078,6 +1080,7 @@ export function CartScreen({
                     keyboardType="email-address"
                     hint={t.receiptEmailHint}
                     required={needsContact}
+                    locked={emailLocked}
                   />
                   {confirmByCall ? (
                     <Text style={[styles.fieldLabel, { textTransform: "none" }]}>{t.callNote}</Text>
@@ -1609,6 +1612,7 @@ function Field({
   keyboardType,
   hint,
   required = false,
+  locked = false,
 }: {
   label: string;
   value: string;
@@ -1619,6 +1623,8 @@ function Field({
   /** Marked with an asterisk — and it is set ONLY where `missing` above
    *  actually blocks the order on this field. */
   required?: boolean;
+  /** Read-only, e.g. the email while its cash code is being verified. */
+  locked?: boolean;
 }): React.ReactElement {
   const isEmail = keyboardType === "email-address";
   return (
@@ -1634,7 +1640,8 @@ function Field({
         autoCorrect={isEmail ? false : undefined}
         autoComplete={isEmail ? "email" : undefined}
         textContentType={isEmail ? "emailAddress" : undefined}
-        style={styles.input}
+        editable={!locked}
+        style={[styles.input, locked && { opacity: 0.6 }]}
       />
       {hint ? <Text style={[styles.fieldLabel, { textTransform: "none" }]}>{hint}</Text> : null}
     </View>

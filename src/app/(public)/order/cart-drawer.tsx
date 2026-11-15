@@ -547,6 +547,10 @@ export function CartDrawer({
   // The code step stays open only for the address the code went to —
   // editing the email (or leaving cash) closes it.
   const codeStepOpen = confirmByCall && codeSentTo !== null && codeSentTo === typedEmail;
+  // While the code is being sent or waits to be typed, the address under
+  // verification cannot be edited. Leaving cash (another payment method or
+  // dine-in) closes the step and frees the field again.
+  const emailLocked = codeStepOpen || (confirmByCall && codeBusy);
   const [street, setStreet] = useState("");
   const [zip, setZip] = useState("");
   const [note, setNote] = useState("");
@@ -1560,12 +1564,17 @@ export function CartDrawer({
                       value={customerEmail}
                       maxLength={120}
                       required={orderType !== "dine_in"}
+                      // Locked once the cash code is on its way (owner,
+                      // 2026-11-15): the address is under verification.
+                      readOnly={emailLocked}
+                      aria-readonly={emailLocked}
                       onChange={(e) => {
+                        if (emailLocked) return;
                         setCustomerEmail(e.target.value);
                         setCodeError(null);
                       }}
                       placeholder={t.emailPlaceholder}
-                      className={FIELD}
+                      className={FIELD + (emailLocked ? " cursor-not-allowed opacity-60" : "")}
                     />
                   </label>
                   {orderType === "delivery" ? (
