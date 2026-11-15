@@ -4,6 +4,7 @@ import { env } from "./env";
 import { signupUser } from "./auth-service";
 import { asTenant } from "./tenant";
 import { confirmCashOrder, placeOrder, rejectCashOrder } from "./order-service";
+import { getGuestPaymentOptions, switchUnpaidOrderToCash } from "./connect-service";
 import {
   checkOrderEmailToken,
   sendOrderEmailCode,
@@ -198,6 +199,49 @@ describe.runIf(env.EMAIL_TRANSPORT === "mailhog")(
         ok: false,
         error: "not_applicable",
       });
+    });
+
+    it("switching an unpaid card order to cash needs the code too, then waits for the call", async () => {
+      // Owner, 2026-11-15: the switch must not be a way around the code
+      // and the confirmation call.
+      const fx = await fixture(true);
+      const email = `switch-${randomUUID()}@ex.com`;
+      const placed = await placeOrder(fx, { ...pickup(fx, email), intendedPayment: "card" });
+      if (!placed.ok) throw new Error(`order failed: ${placed.error}`);
+      const token = placed.value.receiptToken;
+
+      // The pay page / app may not offer it — they cannot ask for a code.
+      const options = await getGuestPaymentOptions(fx.tenantId, placed.value.orderId);
+      expect(options?.acceptsCash).toBe(false);
+
+      expect(await switchUnpaidOrderToCash(fx.tenantId, placed.value.orderId, token)).toEqual({
+        ok: false,
+        error: "email_unverified",
+      });
+      expect(
+        await switchUnpaidOrderToCash(
+          fx.tenantId,
+          placed.value.orderId,
+          token,
+          signOrderEmailToken(fx.venueId, "someone-else@ex.com"),
+        ),
+      ).toEqual({ ok: false, error: "email_unverified" });
+
+      const switched = await switchUnpaidOrderToCash(
+        fx.tenantId,
+        placed.value.orderId,
+        token,
+        signOrderEmailToken(fx.venueId, email),
+      );
+      expect(switched.ok).toBe(true);
+      const row = await asTenant(fx.tenantId, (tx) =>
+        tx.order.findFirstOrThrow({ where: { id: placed.value.orderId } }),
+      );
+      expect(row.paymentStatus).toBe("none");
+      expect(row.needsConfirmation).toBe(true);
+      expect(awaitingConfirmation(row)).toBe(true);
+      // The guest's screen gets the cash (B) number the kitchen calls out.
+      if (switched.ok) expect(switched.orderSeries).toBe("B");
     });
 
     it("rejecting cancels the order and emails the guest", async () => {

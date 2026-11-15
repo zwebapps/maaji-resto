@@ -114,6 +114,16 @@ const de: CheckoutCopy = {
   payKeepWindowOpen:
     "Die sichere Zahlungsseite wird geöffnet. Bitte schließen Sie dieses Fenster nicht.",
   payWithPaypal: "Mit PayPal zahlen",
+  /** One-tap card button in the cart (owner, 2026-11-15). */
+  payWithCard: (amount) => `Mit Karte zahlen · ${amount}`,
+  /** Second tab / switched method found the order already paid. */
+  alreadyPaid: "Diese Bestellung ist bereits bezahlt — es ist nichts mehr zu zahlen.",
+  /** Same basket again: the existing order is shown, not a new one. */
+  alreadyPlaced:
+    "Diese Bestellung wurde bereits aufgegeben — es wurde keine zweite Bestellung angelegt.",
+  errPaymentProcessing: "Für diese Bestellung läuft bereits eine Zahlung in einem anderen Fenster.",
+  /** Leaves the cash code step and shows the payment buttons again. */
+  otherPayment: "Andere Zahlungsart wählen",
   trackOrder: "Bestellung verfolgen",
   downloadReceipt: "Beleg herunterladen (PDF)",
   startNewOrder: "Neue Bestellung starten",

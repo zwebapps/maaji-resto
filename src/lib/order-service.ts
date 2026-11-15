@@ -237,6 +237,16 @@ export interface PlacedOrder {
    * instead of 201, and so tests can assert no duplicate was written.
    */
   replayed?: boolean;
+  /**
+   * Replays only: where the existing order stands, so a second tab or a
+   * switched payment method can continue THAT order instead of starting
+   * a second one (owner, 2026-11-15) — `paid` means nothing is left to pay.
+   */
+  existing?: {
+    status: string;
+    paymentStatus: string;
+    paymentProvider: string | null;
+  };
 }
 
 export type PlaceOrderResult =
@@ -549,6 +559,8 @@ export async function placeOrder(
           giftCardDiscountCents: true,
           giftCardLast4: true,
           paymentProvider: true,
+          paymentStatus: true,
+          status: true,
         },
       });
       if (existing) {
@@ -574,6 +586,11 @@ export async function placeOrder(
             paidByVoucher: existing.paymentProvider === VOUCHER_PROVIDER,
             paidByGiftCard: existing.paymentProvider === GIFT_CARD_PROVIDER,
             replayed: true as const,
+            existing: {
+              status: existing.status,
+              paymentStatus: existing.paymentStatus,
+              paymentProvider: existing.paymentProvider,
+            },
           },
         };
       }

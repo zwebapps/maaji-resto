@@ -114,6 +114,15 @@ const ar: CheckoutCopy = {
     "سيتم تحويلك إلى صفحة دفع آمنة. يُرجى عدم إغلاق هذه النافذة حتى يظهر تأكيد طلبك.",
   payKeepWindowOpen: "جارٍ فتح صفحة الدفع الآمنة. يُرجى عدم إغلاق هذه النافذة.",
   payWithPaypal: "الدفع عبر PayPal",
+  /** One-tap card button in the cart (owner, 2026-11-15). */
+  payWithCard: (amount) => `الدفع بالبطاقة · ${amount}`,
+  /** Second tab / switched method found the order already paid. */
+  alreadyPaid: "هذا الطلب مدفوع بالفعل — لا يوجد شيء آخر للدفع.",
+  /** Same basket again: the existing order is shown, not a new one. */
+  alreadyPlaced: "تم إرسال هذا الطلب بالفعل — لم يتم إنشاء طلب ثانٍ.",
+  errPaymentProcessing: "هناك دفعة جارية لهذا الطلب في نافذة أخرى.",
+  /** Leaves the cash code step and shows the payment buttons again. */
+  otherPayment: "اختيار طريقة دفع أخرى",
   trackOrder: "تتبّع طلبك",
   downloadReceipt: "تنزيل الإيصال (PDF)",
   startNewOrder: "ابدأ طلبًا جديدًا",

@@ -112,6 +112,15 @@ const it: CheckoutCopy = {
     "Verrai indirizzato a una pagina di pagamento sicura. Non chiudere questa finestra finché non vedi la conferma dell'ordine.",
   payKeepWindowOpen: "Apertura della pagina di pagamento sicura. Non chiudere questa finestra.",
   payWithPaypal: "Paga con PayPal",
+  /** One-tap card button in the cart (owner, 2026-11-15). */
+  payWithCard: (amount) => `Paga con carta · ${amount}`,
+  /** Second tab / switched method found the order already paid. */
+  alreadyPaid: "Questo ordine è già pagato: non c'è altro da pagare.",
+  /** Same basket again: the existing order is shown, not a new one. */
+  alreadyPlaced: "Questo ordine è già stato inviato: non è stato creato un secondo ordine.",
+  errPaymentProcessing: "Un pagamento per questo ordine è già in corso in un'altra finestra.",
+  /** Leaves the cash code step and shows the payment buttons again. */
+  otherPayment: "Scegli un altro metodo di pagamento",
   trackOrder: "Segui il tuo ordine",
   downloadReceipt: "Scarica la ricevuta (PDF)",
   startNewOrder: "Inizia un nuovo ordine",

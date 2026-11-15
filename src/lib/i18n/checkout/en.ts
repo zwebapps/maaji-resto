@@ -148,6 +148,15 @@ const en = {
     "You'll be taken to a secure payment page. Please don't close this window until you see your order confirmation.",
   payKeepWindowOpen: "Opening the secure payment page. Please don't close this window.",
   payWithPaypal: "Pay with PayPal",
+  /** One-tap card button in the cart (owner, 2026-11-15). */
+  payWithCard: (amount: string) => `Pay by card · ${amount}`,
+  /** Second tab / switched method found the order already paid. */
+  alreadyPaid: "This order is already paid — there is nothing more to pay.",
+  /** Same basket again: the existing order is shown, not a new one. */
+  alreadyPlaced: "This order was already placed — no second order was created.",
+  errPaymentProcessing: "A payment for this order is already in progress in another window.",
+  /** Leaves the cash code step and shows the payment buttons again. */
+  otherPayment: "Choose another payment method",
   trackOrder: "Track your order",
   downloadReceipt: "Download receipt (PDF)",
   startNewOrder: "Start a new order",

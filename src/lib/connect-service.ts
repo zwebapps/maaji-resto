@@ -821,7 +821,8 @@ export type GuestPaymentExitError =
   | "not_cancellable"
   | "already_paid"
   | "processing"
-  | "cash_not_accepted";
+  | "cash_not_accepted"
+  | "email_unverified";
 export type GuestCancelResult = { ok: true } | { ok: false; error: GuestPaymentExitError };
 
 /**
@@ -934,22 +935,47 @@ export async function switchUnpaidOrderToCash(
   tenantId: string,
   orderId: string,
   token: string,
-): Promise<GuestCancelResult> {
-  const accepts = await asTenant(tenantId, async (tx) => {
+  emailToken?: string,
+): Promise<
+  | { ok: true; orderNumber?: number; orderSeries?: string | null }
+  | { ok: false; error: GuestPaymentExitError }
+> {
+  const looked = await asTenant(tenantId, async (tx) => {
     const order = await tx.order.findFirst({
       where: { id: orderId },
-      select: { venueId: true, orderType: true, customerId: true, orderChannel: true },
+      select: {
+        venueId: true,
+        orderType: true,
+        customerId: true,
+        orderChannel: true,
+        customerEmail: true,
+      },
     });
     if (!order) return null;
     const venue = await tx.venue.findFirst({
       where: { id: order.venueId },
       select: { ordering: true },
     });
-    const { venueTakesCashFor } = await import("./ordering-config");
-    return venueTakesCashFor(venue?.ordering, order.orderType, order);
+    const { venueTakesCashFor, parseOrderingConfig } = await import("./ordering-config");
+    return {
+      accepts: venueTakesCashFor(venue?.ordering, order.orderType, order),
+      // Cash pickup / delivery with the owner's verify switch: the same
+      // email code + confirmation call as a cash order placed directly
+      // (owner, 2026-11-15) — switching must not be a way around them.
+      verify:
+        order.orderType !== "dine_in" && parseOrderingConfig(venue?.ordering).verifyCash === true,
+      venueId: order.venueId,
+      customerEmail: order.customerEmail,
+    };
   });
-  if (accepts === null) return { ok: false, error: "not_found" };
-  if (!accepts) return { ok: false, error: "cash_not_accepted" };
+  if (looked === null) return { ok: false, error: "not_found" };
+  if (!looked.accepts) return { ok: false, error: "cash_not_accepted" };
+  if (looked.verify) {
+    const { checkOrderEmailToken } = await import("./order-email-code");
+    if (!checkOrderEmailToken(emailToken, looked.venueId, looked.customerEmail ?? undefined)) {
+      return { ok: false, error: "email_unverified" };
+    }
+  }
 
   const released = await releaseOnlinePayment(tenantId, orderId, token);
   if (!released.ok) return released;
@@ -961,7 +987,14 @@ export async function switchUnpaidOrderToCash(
         status: "placed",
         paymentStatus: { in: ["pending", "failed"] },
       },
-      data: { paymentStatus: "none", paymentProvider: null, paymentRef: null },
+      data: {
+        paymentStatus: "none",
+        paymentProvider: null,
+        paymentRef: null,
+        // Waits for the restaurant's confirmation call, like any verified
+        // cash pickup / delivery order.
+        ...(looked.verify ? { needsConfirmation: true } : {}),
+      },
     });
     if (res.count === 0) return res;
     // A cash order now: it moves into the B series (owner, 2026-10-11). The
@@ -995,7 +1028,19 @@ export async function switchUnpaidOrderToCash(
   void sendNewOrderNotification(tenantId, orderId);
   const { sendNewOrderPush } = await import("./push-service");
   void sendNewOrderPush(tenantId, orderId);
-  return { ok: true };
+  // The cash number it now carries (B series), so the guest's screen
+  // shows the number the kitchen will call out.
+  const renumbered = await asTenant(tenantId, (tx) =>
+    tx.order.findFirst({
+      where: { id: orderId },
+      select: { orderNumber: true, orderSeries: true },
+    }),
+  );
+  return {
+    ok: true,
+    orderNumber: renumbered?.orderNumber,
+    orderSeries: renumbered?.orderSeries ?? null,
+  };
 }
 
 /**
@@ -1025,7 +1070,12 @@ export async function getGuestPaymentOptions(
       where: { id: order.venueId },
       select: { ordering: true },
     });
-    const { venueTakesCashFor } = await import("./ordering-config");
+    const { venueTakesCashFor, parseOrderingConfig } = await import("./ordering-config");
+    // Verified cash (pickup / delivery) needs the email code, which only
+    // the cart can ask for — so the pay page and the app's tracking screen
+    // do not offer "pay cash instead" there (owner, 2026-11-15).
+    const verifyCash =
+      order.orderType !== "dine_in" && parseOrderingConfig(venue?.ordering).verifyCash === true;
     const canExit =
       order.status === "placed" &&
       (order.paymentProvider === "stripe" || order.paymentProvider === "paypal") &&
@@ -1033,7 +1083,7 @@ export async function getGuestPaymentOptions(
     return {
       status: order.status,
       canExit,
-      acceptsCash: venueTakesCashFor(venue?.ordering, order.orderType, order),
+      acceptsCash: !verifyCash && venueTakesCashFor(venue?.ordering, order.orderType, order),
     };
   });
 }

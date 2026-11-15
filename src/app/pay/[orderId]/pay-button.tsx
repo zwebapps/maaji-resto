@@ -41,7 +41,14 @@ export function PayButton({
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ token, ref: payRef }),
             });
-            if (!res.ok) throw new Error(String(res.status));
+            // 409 / 404 = this checkout did not settle or no longer exists —
+            // typically because the order was paid or switched to cash in
+            // another tab and this card page was closed. Reload so the page
+            // shows where the order really stands ("Bezahlt ✓", "bar")
+            // instead of a "try again" that invites a second payment.
+            if (!res.ok && res.status !== 409 && res.status !== 404) {
+              throw new Error(String(res.status));
+            }
             location.reload();
           } catch {
             setState("error");

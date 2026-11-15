@@ -301,8 +301,10 @@ describe("paypal payments (fake provider, full flow)", () => {
     await asTenant(fx.tenantId, (tx) =>
       tx.venue.updateMany({ data: { ordering: { acceptedPayments: ["cash", "paypal"] } } }),
     );
-    expect(await switchUnpaidOrderToCash(fx.tenantId, orderId, receiptToken)).toEqual({
+    // The answer carries the order's new cash (B) number for the guest.
+    expect(await switchUnpaidOrderToCash(fx.tenantId, orderId, receiptToken)).toMatchObject({
       ok: true,
+      orderSeries: "B",
     });
     const row = await asTenant(fx.tenantId, (tx) =>
       tx.order.findFirstOrThrow({

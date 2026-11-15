@@ -16,7 +16,12 @@ import { verifyReceiptToken } from "@/lib/receipt-token";
  * in `switchUnpaidOrderToCash`; this route only maps its answer to HTTP.
  */
 
-const bodySchema = z.object({ token: z.string().min(10).max(2048) });
+const bodySchema = z.object({
+  token: z.string().min(10).max(2048),
+  // Proof of the email code — required when the venue verifies cash
+  // pickup / delivery (see switchUnpaidOrderToCash).
+  emailToken: z.string().max(1000).optional(),
+});
 
 export async function POST(
   request: Request,
@@ -34,14 +39,22 @@ export async function POST(
     return withCors(NextResponse.json({ error: "invalid_token" }, { status: 403 }));
   }
 
-  const result = await switchUnpaidOrderToCash(verified.tenantId, orderId, parsed.data.token);
+  const result = await switchUnpaidOrderToCash(
+    verified.tenantId,
+    orderId,
+    parsed.data.token,
+    parsed.data.emailToken,
+  );
   if (!result.ok) {
     const status =
       result.error === "invalid_token" ? 403 : result.error === "not_found" ? 404 : 409;
     return withCors(NextResponse.json({ error: result.error }, { status }));
   }
   return withCors(
-    NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } }),
+    NextResponse.json(
+      { ok: true, orderNumber: result.orderNumber, orderSeries: result.orderSeries },
+      { headers: { "Cache-Control": "private, no-store" } },
+    ),
   );
 }
 

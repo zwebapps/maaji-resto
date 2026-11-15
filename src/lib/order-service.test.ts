@@ -331,6 +331,33 @@ describe("order-service (guest self-ordering)", () => {
       expect(count).toBe(1);
     });
 
+    it("another tab / payment button with the same key continues ONE order and says where it stands", async () => {
+      // Owner, 2026-11-15: Card in one tab, PayPal in another must not be
+      // two orders the guest could both pay.
+      const fx = await fixtureVenue();
+      const key = `req-${randomUUID()}`;
+      const items = [{ itemId: fx.itemIds.naan, quantity: 1 }];
+      const card = await placeOrder(fx, { items, clientRequestId: key, intendedPayment: "card" });
+      const paypal = await placeOrder(fx, {
+        items,
+        clientRequestId: key,
+        intendedPayment: "paypal",
+      });
+      if (!card.ok || !paypal.ok) throw new Error("expected ok");
+
+      expect(paypal.value.orderId).toBe(card.value.orderId);
+      expect(paypal.value.replayed).toBe(true);
+      expect(paypal.value.existing).toEqual({
+        status: "placed",
+        paymentStatus: "pending",
+        paymentProvider: "stripe",
+      });
+      const count = await asTenant(fx.tenantId, (tx) =>
+        tx.order.count({ where: { venueId: fx.venueId } }),
+      );
+      expect(count).toBe(1);
+    });
+
     it("replays the stored totals, not a recomputed basket", async () => {
       const fx = await fixtureVenue();
       const key = `req-${randomUUID()}`;

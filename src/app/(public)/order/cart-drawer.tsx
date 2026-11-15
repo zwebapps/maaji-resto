@@ -21,11 +21,11 @@ import {
   clearCart,
   formatCents,
   getCartSnapshot,
-  newRequestId,
   setQuantity,
   subscribeToCart,
 } from "./cart-store";
 import { rememberOrder } from "./last-order-store";
+import { attemptKeyFor, clearAttempt } from "./checkout-attempt-store";
 
 interface PlacedOrder {
   orderId: string;
@@ -35,7 +35,15 @@ interface PlacedOrder {
   totalCents: number;
   currency: string;
   receiptToken: string;
+  /** The server answered with an order this basket had ALREADY created
+   *  (another tab, or another payment button) — see checkout-attempt-store. */
+  replayed?: boolean;
+  existing?: { status: string; paymentStatus: string; paymentProvider: string | null };
 }
+
+/** Where a placed order stands for the confirmation screen: still to be
+ *  paid online, a cash order, or paid (nothing left to offer). */
+type PlacedState = "online" | "cash" | "paid";
 
 /**
  * Apple Pay / Google Pay (P7-13). Split into its own chunk and pulled in
@@ -309,13 +317,9 @@ const CTA_PAY =
 
 /**
  * Payment ROWS (P7-13, owner's mockup): one full-width row per method,
- * radio-style, brand marks on the end edge. They only CHOOSE — a single
- * CTA underneath places the order — which is what lets Apple Pay / Google
- * Pay sit above them as a genuine one-tap alternative.
- *
- * The tiles this replaced each placed the order on tap, so "card" was a
- * commitment rather than a choice and there was nowhere to put a wallet
- * button that did not read as a fourth, differently-behaved tile.
+ * brand marks on the end edge. Since 2026-11-15 each row is the action
+ * itself — one tap places the order and opens its payment (owner: "no
+ * extra click"). Apple Pay / Google Pay still sit above them.
  *
  * 52px min height clears the 44px target floor of 2.5.5 with room for the
  * 32px brand chips.
@@ -326,9 +330,6 @@ const PAY_ROW_BASE =
 const PAY_ROW_IDLE =
   PAY_ROW_BASE +
   " bg-[var(--menu-surface-text,var(--menu-text))]/7 text-[var(--menu-surface-text,var(--menu-text))] hover:bg-[var(--menu-surface-text,var(--menu-text))]/13";
-const PAY_ROW_ON =
-  PAY_ROW_BASE +
-  " bg-[var(--menu-surface-accent,var(--menu-accent))]/14 font-semibold text-[var(--menu-surface-text,var(--menu-text))]";
 
 /** Now / Scheduled. Same recipe as the order-type chips, but with no icon
  *  row above the label they need an explicit height to clear 44px. */
@@ -347,24 +348,6 @@ const STEP_BTN =
 const CHANGE_BTN =
   "inline-flex min-h-[44px] shrink-0 items-center rounded-full px-3 text-xs font-medium text-[var(--menu-surface-text,var(--menu-text))] underline decoration-1 underline-offset-4 transition hover:bg-[var(--menu-surface-text,var(--menu-text))]/10 " +
   FOCUS_RING;
-
-/** The selection carrier that is NOT colour: an empty ring becomes a
- *  filled disc. 1.4.1 wants a shape, not just a wash. */
-function RadioDot({ on }: { on: boolean }): React.ReactElement {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-5 w-5 shrink-0"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="9" />
-      {on ? <circle cx="12" cy="12" r="4.6" fill="currentColor" stroke="none" /> : null}
-    </svg>
-  );
-}
 
 function CashIcon({ className }: { className?: string }): React.ReactElement {
   return (
@@ -583,9 +566,13 @@ export function CartDrawer({
   // during render (React's pattern for state derived from other state),
   // so there is no frame with a stale `open`.
   if (open && !sheetShown) setOpen(false);
-  // Survives re-renders so a retry reuses the same idempotency key.
-  const attemptRef = useRef<{ key: string; signature: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Drives the confirmation screen's pay buttons — they appear only for
+   *  an online order that is still unpaid (owner, 2026-11-15). */
+  const [placedState, setPlacedState] = useState<PlacedState>("cash");
+  /** One calm line on the confirmation screen ("already paid" / "already
+   *  placed") — information, not an error. */
+  const [placedNotice, setPlacedNotice] = useState<string | null>(null);
   /** The guest asked to edit a delivery address the drawer had already
    *  prefilled. Sticky for the session: once the fields are open they stay
    *  open, so a half-typed change can't be swallowed by a re-render. */
@@ -837,14 +824,28 @@ export function CartDrawer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: order.receiptToken }),
       });
-      const body = (await res.json().catch(() => null)) as { url?: string } | null;
+      const body = (await res.json().catch(() => null)) as { url?: string; error?: string } | null;
       if (res.ok && body?.url) {
         // `assign` rather than `location.href =`: the same navigation, but
         // a call the lint rules don't read as mutating a global.
         window.location.assign(body.url);
         return; // keep the button busy while the page unloads
       }
-      setError(method === "paypal" ? t.errPaypalOpen : t.errCardOpen);
+      // Paid meanwhile (another tab, another method): never a second
+      // payment — say so and take the pay buttons away.
+      if (body?.error === "already_paid") {
+        setPlacedState("paid");
+        setPlacedNotice(t.alreadyPaid);
+        setPayStarting(false);
+        return;
+      }
+      setError(
+        body?.error === "processing"
+          ? t.errPaymentProcessing
+          : method === "paypal"
+            ? t.errPaypalOpen
+            : t.errCardOpen,
+      );
     } catch {
       setError(t.errPayRetry);
     }
@@ -901,24 +902,23 @@ export function CartDrawer({
         items: lines.map((l) => ({ itemId: l.itemId, quantity: l.quantity })),
       };
 
-      // Idempotency key for this submit. A lost response looks exactly
-      // like a failure here (the `catch` below), so the guest's natural
-      // reaction — tap again — would otherwise place a SECOND real order
-      // and the kitchen would cook it twice. Reusing the key makes the
-      // retry return the first order.
-      //
-      // Keyed to the payload: change anything about the basket and a
-      // fresh key is minted, so an edited order is never answered with
-      // the previous one. Cleared on success.
-      const signature = JSON.stringify(payload);
-      if (!attemptRef.current || attemptRef.current.signature !== signature) {
-        attemptRef.current = { key: newRequestId(), signature };
-      }
+      // Idempotency key for this BASKET, shared by every tab of this venue
+      // (checkout-attempt-store). A lost response looks exactly like a
+      // failure, so the guest taps again; another tab, or another payment
+      // button, sends the same basket — and all of them must land on ONE
+      // order, or the kitchen cooks twice and the guest can pay twice.
+      // The payment method and the email proof are left out of the
+      // signature on purpose: switching Card → PayPal → Cash continues the
+      // same order (owner, 2026-11-15). Any other change mints a new key.
+      const { intendedPayment: _method, emailToken: _proof, ...basket } = payload;
+      void _method;
+      void _proof;
+      const requestKey = attemptKeyFor(slug, JSON.stringify(basket));
 
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, clientRequestId: attemptRef.current.key }),
+        body: JSON.stringify({ ...payload, clientRequestId: requestKey }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -946,8 +946,6 @@ export function CartDrawer({
         return null;
       }
       const value = (await res.json()) as PlacedOrder;
-      // Landed — retire the key so the guest's next basket is a new order.
-      attemptRef.current = null;
       // Remembered HERE rather than in `commitPlaced`, because the wallet
       // path defers that call until the charge resolves: the order is real
       // from this moment either way, and a guest whose wallet payment
@@ -1033,18 +1031,121 @@ export function CartDrawer({
     setCode("");
   }
 
-  /** The ordinary path: place, then open the payment page (card/PayPal)
-   *  or hand over the receipt (cash). */
+  /**
+   * Turn this basket's unpaid online order (made in another tab, or by an
+   * earlier tap on Card / PayPal) into a cash order — the SAME order, with
+   * the email proof, so it waits for the confirmation call like any cash
+   * order. The server closes the open card / PayPal page first and refuses
+   * when money was already taken.
+   */
+  async function switchToCash(
+    order: PlacedOrder,
+    emailToken?: string,
+  ): Promise<PlacedOrder | null> {
+    setPlacing(true);
+    try {
+      const res = await fetch(`/api/v1/orders/${order.orderId}/pay-cash`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: order.receiptToken, emailToken }),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        error?: string;
+        orderNumber?: number;
+        orderSeries?: string | null;
+      } | null;
+      if (res.ok) {
+        return {
+          ...order,
+          orderNumber: body?.orderNumber ?? order.orderNumber,
+          orderSeries: body?.orderSeries ?? order.orderSeries,
+        };
+      }
+      if (body?.error === "already_paid") {
+        setPlacedState("paid");
+        setPlacedNotice(t.alreadyPaid);
+        commitPlaced(order);
+        return null;
+      }
+      setError(
+        body?.error === "processing"
+          ? t.errPaymentProcessing
+          : body?.error === "email_unverified"
+            ? t.verifyFirst
+            : t.errGeneric,
+      );
+      return null;
+    } catch {
+      setError(t.errNoConnection);
+      return null;
+    } finally {
+      setPlacing(false);
+    }
+  }
+
+  /**
+   * One tap on Card, PayPal or Cash: place the order and continue it.
+   *
+   * Every tab and every payment button of the same basket lands on ONE
+   * order (checkout-attempt-store). A replayed order is continued, never
+   * duplicated: paid → nothing to pay; an unpaid online order → pay it
+   * with the method just tapped (the server closes the other page); a
+   * cash order → shown as already placed.
+   */
   async function submitOrder(method: PayMethod, emailToken?: string): Promise<void> {
     setPayMethod(method);
+    setPlacedNotice(null);
     // Cash pickup / delivery: the first press only mails the code; the
     // order goes once the guest types it in (confirmCodeAndOrder).
     if (method === "cash" && confirmByCall && !emailToken) {
       await sendEmailCode();
       return;
     }
-    const value = await placeOrderOnServer(method, true, emailToken);
+    let value = await placeOrderOnServer(method, false, emailToken);
+    // The basket's earlier order was cancelled (the guest left its pay
+    // page): that one is over, so this tap starts a fresh order.
+    if (value?.replayed && value.existing?.status === "cancelled") {
+      clearAttempt(slug);
+      value = await placeOrderOnServer(method, false, emailToken);
+    }
     if (!value) return;
+
+    const existing = value.replayed ? value.existing : undefined;
+    if (existing) {
+      if (existing.paymentStatus === "paid") {
+        setPlacedState("paid");
+        setPlacedNotice(t.alreadyPaid);
+        commitPlaced(value);
+        return;
+      }
+      const unpaidOnline =
+        (existing.paymentProvider === "stripe" || existing.paymentProvider === "paypal") &&
+        (existing.paymentStatus === "pending" || existing.paymentStatus === "failed") &&
+        existing.status === "placed";
+      if (!unpaidOnline) {
+        // Already a cash order (or past the point of switching).
+        setPlacedState("cash");
+        setPlacedNotice(t.alreadyPlaced);
+        commitPlaced(value);
+        return;
+      }
+      if (method === "cash") {
+        const switched = await switchToCash(value, emailToken);
+        if (!switched) return;
+        setPlacedState("cash");
+        commitPlaced(switched);
+        downloadReceipt(switched);
+        return;
+      }
+      setPlacedState("online");
+      commitPlaced(value);
+      await startPayment(value, method);
+      return;
+    }
+
+    // A fresh order.
+    setPlacedState(method === "cash" ? "cash" : "online");
+    commitPlaced(value);
     // Card / PayPal: go straight to the payment page. If that hop fails
     // the confirmation screen below still offers the pay buttons, so
     // the order is never stranded.
@@ -1063,7 +1164,7 @@ export function CartDrawer({
    *  doesn't, "Track your order" is the primary action and takes that weight.
    *  A wallet charge that went through leaves nothing to pay, so the pay
    *  CTAs disappear and Track takes over. */
-  const hasPaymentCta = (onlinePayment || paypalPayment) && !walletPaid;
+  const hasPaymentCta = (onlinePayment || paypalPayment) && placedState === "online" && !walletPaid;
 
   return (
     /* `dir` here as well as on <html>: the sheet is a fixed overlay, and
@@ -1158,18 +1259,26 @@ export function CartDrawer({
                   {money(placed.totalCents)}
                 </span>{" "}
                 ({t.vatIncluded(VAT_RATE_LABEL, money(vatFromGross(placed.totalCents)))})
-                {payMethod === "cash" ? t.placedCashTail : "."}
+                {placedState === "cash" ? t.placedCashTail : "."}
                 {customerEmail.trim()
-                  ? t.placedEmailTail(customerEmail.trim(), payMethod !== "cash")
+                  ? t.placedEmailTail(customerEmail.trim(), placedState === "online")
                   : ""}
               </p>
-              {confirmByCall ? (
+              {placedState === "cash" && modes.verifyCash === true && orderType !== "dine_in" ? (
                 <p className="text-sm font-semibold text-[var(--menu-surface-text,var(--menu-text))]">
                   {t.callNote}
                 </p>
               ) : null}
               {error ? <MessagePopup kind="error" text={error} /> : null}
-              {onlinePayment && placed && !walletPaid ? (
+              {placedNotice ? (
+                <p
+                  role="status"
+                  className="text-sm font-semibold text-[var(--menu-surface-text,var(--menu-text))]"
+                >
+                  {placedNotice}
+                </p>
+              ) : null}
+              {onlinePayment && placed && hasPaymentCta ? (
                 <button
                   type="button"
                   disabled={payStarting}
@@ -1179,7 +1288,7 @@ export function CartDrawer({
                   {payStarting ? t.openingPayment : t.payOnline(money(placed.totalCents))}
                 </button>
               ) : null}
-              {paypalPayment && placed && !walletPaid ? (
+              {paypalPayment && placed && hasPaymentCta ? (
                 <button
                   type="button"
                   disabled={payStarting}
@@ -1225,7 +1334,10 @@ export function CartDrawer({
                 type="button"
                 onClick={() => {
                   setPlaced(null);
+                  setPlacedNotice(null);
                   setTableNumber("");
+                  // The next basket is a new order, even if it matches.
+                  clearAttempt(slug);
                   setOpen(false);
                 }}
                 className={CTA_LINK}
@@ -1815,6 +1927,7 @@ export function CartDrawer({
                           errorText={t.errWalletPay}
                           placeOrder={async () => {
                             setPayMethod("card");
+                            setPlacedState("online");
                             const value = await placeOrderOnServer("card", false);
                             walletOrderRef.current = value;
                             return value
@@ -1842,48 +1955,6 @@ export function CartDrawer({
                           </p>
                         ) : null}
                       </>
-                    ) : null}
-
-                    {/* One row per method. A single option is not a choice
-                        — the CTA and the explainer below already say what
-                        will happen — so the list only appears when there
-                        is something to pick. */}
-                    {options.length > 1 ? (
-                      <div className="mt-3">
-                        <p className={FIELD_LABEL + " text-sm"}>{t.paymentMethod}</p>
-                        <div
-                          role="radiogroup"
-                          aria-label={t.paymentMethod}
-                          className="mt-1.5 space-y-2"
-                        >
-                          {options.map((option) => {
-                            const on = payMethod === option.key;
-                            return (
-                              <button
-                                key={option.key}
-                                type="button"
-                                role="radio"
-                                aria-checked={on}
-                                onClick={() => setPayMethod(option.key)}
-                                className={on ? PAY_ROW_ON : PAY_ROW_IDLE}
-                              >
-                                <RadioDot on={on} />
-                                <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                                {/* Decorative: the row already says what
-                                    it is, so the marks are not a second
-                                    thing for a screen reader to read. */}
-                                <span aria-hidden="true" className="shrink-0">
-                                  {option.marks.length > 0 ? (
-                                    <PaymentMarks ids={option.marks} />
-                                  ) : (
-                                    <CashIcon className="h-6 w-6 text-[var(--menu-surface-text-soft,var(--menu-text-soft))]" />
-                                  )}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
                     ) : null}
 
                     {codeStepOpen ? (
@@ -1937,20 +2008,59 @@ export function CartDrawer({
                         >
                           {t.resendCode}
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCodeSentTo(null);
+                            setCode("");
+                            setCodeError(null);
+                          }}
+                          disabled={codeBusy || busy}
+                          className="mt-1 block w-full text-center text-xs underline underline-offset-2"
+                        >
+                          {t.otherPayment}
+                        </button>
                       </div>
                     ) : (
-                      <button
-                        type="button"
-                        disabled={payBlocked || codeBusy}
-                        onClick={() => void submitOrder(payMethod)}
-                        className={"mt-3 " + (payMethod === "cash" ? CTA_PRIMARY : CTA_PAY)}
-                      >
-                        {busy || codeBusy
-                          ? payMethod === "cash"
-                            ? t.placing
-                            : t.opening
-                          : `${payMethod === "cash" ? t.placeOrder : t.pay} · ${money(total)}`}
-                      </button>
+                      /* One tap per method (owner, 2026-11-15): Card,
+                         PayPal and Cash each place the order AND continue
+                         it — no "choose, then confirm". Every button of the
+                         same basket lands on ONE order (see submitOrder). */
+                      <div role="group" aria-label={t.paymentMethod} className="mt-3 space-y-2">
+                        {options.length > 1 ? (
+                          <p className={FIELD_LABEL + " text-sm"}>{t.paymentMethod}</p>
+                        ) : null}
+                        {options.map((option) => {
+                          const running = (busy || codeBusy) && payMethod === option.key;
+                          const label =
+                            option.key === "card"
+                              ? t.payWithCard(money(total))
+                              : option.key === "paypal"
+                                ? `${t.payWithPaypal} · ${money(total)}`
+                                : `${option.label} · ${money(total)}`;
+                          return (
+                            <button
+                              key={option.key}
+                              type="button"
+                              disabled={payBlocked || codeBusy}
+                              onClick={() => void submitOrder(option.key)}
+                              className={PAY_ROW_IDLE + " font-semibold"}
+                            >
+                              <span className="min-w-0 flex-1 truncate">
+                                {running ? (option.key === "cash" ? t.placing : t.opening) : label}
+                              </span>
+                              {/* Decorative: the label already says it. */}
+                              <span aria-hidden="true" className="shrink-0">
+                                {option.marks.length > 0 ? (
+                                  <PaymentMarks ids={option.marks} />
+                                ) : (
+                                  <CashIcon className="h-6 w-6 text-[var(--menu-surface-text-soft,var(--menu-text-soft))]" />
+                                )}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
                     {!codeStepOpen && codeError ? (
                       <p
@@ -1963,7 +2073,7 @@ export function CartDrawer({
                     {/* Card / PayPal leave this page for the provider's: say
                         so up front, and louder while it opens, so nobody
                         closes the tab mid-payment (owner, 2026-10-19). */}
-                    {payMethod !== "cash" ? (
+                    {!codeStepOpen && (onlinePayment || paypalPayment) ? (
                       <p
                         role="status"
                         className={
@@ -1975,7 +2085,10 @@ export function CartDrawer({
                       >
                         {busy ? t.payKeepWindowOpen : t.payRedirectNote}
                       </p>
-                    ) : confirmByCall ? (
+                    ) : null}
+                    {/* Cash pickup / delivery waits for a call: say so
+                        before the guest taps it. */}
+                    {cashOk && modes.verifyCash === true && orderType !== "dine_in" ? (
                       <p className="mt-2 text-center text-xs text-[var(--menu-surface-text-soft,var(--menu-text-soft))]">
                         {t.callNote}
                       </p>
