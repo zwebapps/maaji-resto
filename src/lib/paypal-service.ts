@@ -22,7 +22,13 @@ export type PayPalPayResult =
   | { ok: true; url: string }
   | {
       ok: false;
-      error: "invalid_token" | "not_found" | "already_paid" | "not_available" | "processing";
+      error:
+        | "invalid_token"
+        | "not_found"
+        | "already_paid"
+        | "not_available"
+        | "processing"
+        | "order_cancelled";
     };
 
 /**
@@ -63,11 +69,14 @@ export async function createPayPalOrderPayment(
         totalCents: true,
         currency: true,
         paymentStatus: true,
+        status: true,
         venue: { select: { name: true } },
       },
     });
     if (!order) return { ok: false, error: "not_found" as const };
     if (order.paymentStatus === "paid") return { ok: false, error: "already_paid" as const };
+    // Cancelled: nothing left to pay for (see createOrderPayment).
+    if (order.status === "cancelled") return { ok: false, error: "order_cancelled" as const };
 
     const appParam = appReturnUrl ? `&app=${encodeURIComponent(appReturnUrl)}` : "";
     const payPage = `${siteUrl()}/pay/${order.id}?token=${encodeURIComponent(token)}${appParam}`;

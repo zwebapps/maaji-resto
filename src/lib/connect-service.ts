@@ -115,7 +115,13 @@ export type PayResult =
   | { ok: true; url: string }
   | {
       ok: false;
-      error: "invalid_token" | "not_found" | "not_available" | "already_paid" | "processing";
+      error:
+        | "invalid_token"
+        | "not_found"
+        | "not_available"
+        | "already_paid"
+        | "processing"
+        | "order_cancelled";
     };
 
 /** The own-keys columns the direct-charge routing reads. */
@@ -192,6 +198,7 @@ export async function createOrderPayment(
           totalCents: true,
           currency: true,
           paymentStatus: true,
+          status: true,
           locale: true,
           venue: { select: { name: true, slug: true } },
         },
@@ -199,6 +206,9 @@ export async function createOrderPayment(
     ]);
     if (!order) return { ok: false, error: "not_found" as const };
     if (order.paymentStatus === "paid") return { ok: false, error: "already_paid" as const };
+    // Cancelled (by the guest or the restaurant): nothing left to pay for —
+    // no payment page may open, not even one that would be refused later.
+    if (order.status === "cancelled") return { ok: false, error: "order_cancelled" as const };
 
     const settings = await getOperatorSettings();
     const payPage = `${siteUrl()}/pay/${order.id}?token=${encodeURIComponent(token)}`;
@@ -339,7 +349,8 @@ export type PaymentIntentResult =
         | "not_available"
         | "already_paid"
         | "processing"
-        | "publishable_key_missing";
+        | "publishable_key_missing"
+        | "order_cancelled";
     };
 
 /**
@@ -393,12 +404,14 @@ export async function createOrderPaymentIntent(
           totalCents: true,
           currency: true,
           paymentStatus: true,
+          status: true,
           venue: { select: { name: true } },
         },
       }),
     ]);
     if (!order) return { ok: false, error: "not_found" as const };
     if (order.paymentStatus === "paid") return { ok: false, error: "already_paid" as const };
+    if (order.status === "cancelled") return { ok: false, error: "order_cancelled" as const };
 
     const settings = await getOperatorSettings();
     if (settings.feeMode !== "upfront") return { ok: false, error: "not_available" as const };
