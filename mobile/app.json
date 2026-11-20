@@ -13,7 +13,7 @@
       },
       "appleTeamId": "NFHFDX372C",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Rangla Punjab Restaurant does not use your location. Delivery addresses are typed in by you."
+        "NSLocationWhenInUseUsageDescription": "This app does not use your location. Delivery addresses are typed in by you."
       }
     },
     "android": {
@@ -30,7 +30,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Rangla Punjab Restaurant does not record audio. The app only plays a short sound when a new order arrives.",
+          "microphonePermission": "This app does not record audio. It only plays a short sound when a new order arrives.",
           "recordAudioAndroid": false,
           "enableBackgroundRecording": false,
           "enableBackgroundPlayback": false

@@ -249,6 +249,50 @@ module.exports = ({ config }) => {
     ios.associatedDomains = [...(ios.associatedDomains ?? []), `applinks:${host}`];
   }
 
+  // Apple privacy manifest (PrivacyInfo.xcprivacy), kept HERE rather than
+  // only in the generated, git-ignored ios/ folder, so every EAS build
+  // ships the same one. Required-reason APIs: what React Native / Expo
+  // already declared in the prebuild. Collected data: what an order sends
+  // to the restaurant (name, phone, email, delivery address, the order
+  // itself) and the optional photo on a complaint — all linked to the
+  // guest, used only to fulfil the order, never for tracking. Card / PayPal
+  // details go to Stripe / PayPal, whose SDKs carry their own manifests.
+  // Must match the App Privacy answers in App Store Connect (store listing
+  // checklist: STORE-RELEASE-MAAJI.md).
+  const collected = (type) => ({
+    NSPrivacyCollectedDataType: type,
+    NSPrivacyCollectedDataTypeLinked: true,
+    NSPrivacyCollectedDataTypeTracking: false,
+    NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"],
+  });
+  ios.privacyManifests = {
+    NSPrivacyTracking: false,
+    NSPrivacyTrackingDomains: [],
+    NSPrivacyAccessedAPITypes: [
+      {
+        NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryFileTimestamp",
+        NSPrivacyAccessedAPITypeReasons: ["C617.1"],
+      },
+      {
+        NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryUserDefaults",
+        NSPrivacyAccessedAPITypeReasons: ["CA92.1", "C56D.1"],
+      },
+      {
+        NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategorySystemBootTime",
+        NSPrivacyAccessedAPITypeReasons: ["35F9.1"],
+      },
+    ],
+    NSPrivacyCollectedDataTypes: [
+      collected("NSPrivacyCollectedDataTypeName"),
+      collected("NSPrivacyCollectedDataTypePhoneNumber"),
+      collected("NSPrivacyCollectedDataTypeEmailAddress"),
+      collected("NSPrivacyCollectedDataTypePhysicalAddress"),
+      collected("NSPrivacyCollectedDataTypePurchaseHistory"),
+      collected("NSPrivacyCollectedDataTypePhotosorVideos"),
+      collected("NSPrivacyCollectedDataTypeCustomerSupport"),
+    ],
+  };
+
   // `splash` is the pre-SDK-52 launch-screen key: ignored by the build and
   // rejected by expo-doctor. The launch screen is the expo-splash-screen
   // plugin above, so the generated key is dropped here.

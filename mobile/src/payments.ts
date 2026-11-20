@@ -14,6 +14,7 @@ import {
 import { openReturningPage } from "./browser";
 import type { PlatformPayButtonProps } from "./stripe-module";
 import { loadStripe } from "./stripe-module";
+import { brand } from "./brand.generated";
 
 /**
  * Paying from inside the app.
@@ -37,14 +38,14 @@ import { loadStripe } from "./stripe-module";
  * keys needs no new app binary.
  */
 
-/** The build's own URL scheme (`ranglapunjab://`). Stripe needs it twice:
+/** The build's own URL scheme (`maajirestaurant://` for Maaji). Stripe needs it twice:
  *  as `urlScheme` so the SDK can register its redirect handler, and as the
  *  `returnURL` a 3-D Secure page bounces back to. `app.config.js` takes it
  *  from `brand.generated.json`; the literal fallback keeps the flow working
  *  if the config ever fails to reach the runtime. */
 export const APP_SCHEME: string =
   (typeof Constants.expoConfig?.scheme === "string" ? Constants.expoConfig.scheme : null) ??
-  "ranglapunjab";
+  brand.slug.replace(/[^a-z0-9]/g, "");
 
 /** Where a 3-D Secure challenge returns to. Must match the `urlScheme`
  *  passed to `initStripe` — Stripe dismisses its own web view on it. */

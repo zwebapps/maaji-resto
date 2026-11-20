@@ -3,6 +3,7 @@ import * as Print from "expo-print";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { btPrint, btPrintingAvailable } from "../modules/bt-printer";
 import { fetchStaffTicketEscPos, fetchStaffTicketHtml } from "./staff";
+import { brand } from "./brand.generated";
 
 /**
  * Kitchen tickets, printed from the phone or tablet on the pass.
@@ -121,8 +122,13 @@ export async function setBtPrinter(choice: BtPrinterChoice | null): Promise<void
  *  page as the real tickets (PC858), with a € and umlauts on it, so the
  *  test shows whether this printer prints them. */
 export function testSlipBase64(): string {
+  // The venue's own name (white-label build), ASCII only: the slip is one
+  // byte per character, and a stray accent must not break the test.
+  const venue = brand.name.replace(/[^\x20-\x7e]/g, "?");
   const text =
-    "\x1b@\x1c.\x1bt\x13\x1ba\x01\x1bE\x01Rangla Punjab\n\x1bE\x00Testdruck OK\n" +
+    "\x1b@\x1c.\x1bt\x13\x1ba\x01\x1bE\x01" +
+    venue +
+    "\n\x1bE\x00Testdruck OK\n" +
     "Euro: \xd5  Umlaute: \x84 \x94 \x81 \xe1\n" +
     new Date().toLocaleString("de-DE") +
     "\n\x1bd\x04\x1dVB\x00";
