@@ -17,6 +17,7 @@ this file is the Maaji-specific checklist.
 | Version | **1.0.0** (build numbers: EAS, `autoIncrement`, remote) |
 | Apple team | `NFHFDX372C` (same account as Rangla Punjab) |
 | Google Play | same Play Console as Rangla Punjab |
+| Expo / EAS owner | `elvoriatech` (Elvoria account — log in with it before building) |
 | Server baked into the build | `https://maaji-freiburg.com` (eas.json `production`) |
 
 A new version for a later release:
@@ -47,7 +48,7 @@ then commit `mobile/brand.generated.json`.
 
 ```bash
 cd mobile
-npx eas-cli login                                   # the zahoor1989 Expo account
+npx eas-cli login                                   # the Elvoria Expo account (owner: elvoriatech)
 npx eas-cli build -p ios --profile production       # creates the EAS project "maaji-restaurant" on first run
 npx eas-cli build -p android --profile production
 npx eas-cli submit -p ios --latest
