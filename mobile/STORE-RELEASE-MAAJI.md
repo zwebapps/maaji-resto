@@ -61,6 +61,43 @@ distribution certificate and provisioning profile for `de.maajirestaurant.app`
 generate the upload keystore — let it, EAS keeps it. **Never commit a
 certificate, keystore, `.p8`/`.p12` or password.**
 
+## Status 2026-11-23
+
+- **iOS:** build 1.0.0 (1) installed and running on the owner's iPhone
+  (Xcode, team NFHFDX372C, push + Sign in with Apple). App Store archive
+  built (`mobile/ios/build/Maaji.xcarchive`, git-ignored). **Upload blocked:**
+  App Store Connect has no app with bundle ID `de.maajirestaurant.app` in
+  team NFHFDX372C (Xcode: `missingApp`). Create it (step 1 below), then
+  re-run the export/upload:
+  `xcodebuild -exportArchive -archivePath ios/build/Maaji.xcarchive -exportOptionsPlist ios/build/ExportOptions.plist -exportPath ios/build/export -allowProvisioningUpdates`
+- **Build numbers:** that first upload is iOS build **1**. EAS keeps its own
+  remote counter, so before the first EAS iOS build run
+  `npx eas-cli build:version:set -p ios` and set it to **2** or higher.
+- **Android:** prebuild verified — `de.maajirestaurant.app`, versionCode 1,
+  1.0.0. Unused permissions blocked in `app.json`
+  (`RECORD_AUDIO`, `SYSTEM_ALERT_WINDOW`, `READ/WRITE_EXTERNAL_STORAGE`), so
+  the Play listing does not have to justify microphone or storage access.
+- **EAS login:** this Mac is logged in as `zahoor1989`, which is not a member
+  of `elvoriatech`. Log in as Elvoria, or invite zahoor1989 to the
+  organisation on expo.dev, before `eas build`.
+
+## Android upload key plan (Play App Signing)
+
+1. `npx eas-cli build -p android --profile production` (logged in for
+   `elvoriatech`). When asked "Generate a new Android Keystore?" answer
+   **yes**: EAS creates the **upload key** and stores it.
+2. Back it up once: `npx eas-cli credentials -p android` → Download
+   keystore. Keep the `.jks` and its passwords in your password manager,
+   never in the repo.
+3. Play Console → create "Maaji Restaurant" → **Play App Signing** stays on
+   (default): Google holds the app signing key, EAS's key only uploads.
+   A lost upload key can then be reset through Play support.
+4. Upload the first `.aab` by hand to **Internal testing**, fill Data safety
+   + content rating, then create the service account and save its JSON as
+   `mobile/play-service-account.json` for `npx eas-cli submit -p android --latest`.
+5. For the dispatch-QR app link: Play Console → App signing → SHA-256
+   fingerprint into `public/.well-known/assetlinks.json` (see BUILDS.md).
+
 ## ⛔ Only you can do (accounts, credentials, money)
 
 | # | Where | What |
