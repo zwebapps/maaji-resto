@@ -1990,7 +1990,7 @@ export function CartDrawer({
                               void confirmCodeAndOrder();
                             }
                           }}
-                          className={FIELD + " text-center text-lg tracking-[0.4em]"}
+                          className={FIELD + " text-center text-lg tracking-[0.28em]"}
                         />
                         {codeError ? (
                           <p role="alert" className="mt-2 text-xs font-medium text-[#b3261e]">

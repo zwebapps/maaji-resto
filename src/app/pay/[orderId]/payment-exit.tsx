@@ -104,7 +104,7 @@ export function PaymentExit({
       <dialog
         ref={ref}
         aria-labelledby="payment-exit-title"
-        className="m-auto w-[min(92vw,26rem)] rounded-2xl border border-[var(--menu-surface-text,var(--menu-text))]/10 bg-[var(--menu-surface)] p-0 text-[var(--menu-surface-text,var(--menu-text))] shadow-[0_24px_60px_-30px_rgba(0,0,0,0.6)] backdrop:bg-black/55"
+        className="m-auto w-[min(92vw,26rem)] rounded-2xl border border-[var(--menu-surface-text,var(--menu-text))]/10 bg-[var(--menu-surface)] p-0 text-[var(--menu-surface-text,var(--menu-text))] shadow-[0_24px_60px_-30px_rgba(0,0,0,0.5)] backdrop:bg-black/55"
       >
         <div className="p-6">
           <h2 id="payment-exit-title" className="font-serif text-2xl">
@@ -141,7 +141,7 @@ export function PaymentExit({
               </button>
             ) : null}
             {askCancel ? (
-              <div className="rounded-xl border border-[var(--menu-danger)]/40 p-3">
+              <div className="rounded-xl border border-[var(--menu-danger)] p-3">
                 <p className="text-sm">{labels.cancelConfirm}</p>
                 <div className="mt-3 flex gap-2">
                   <button

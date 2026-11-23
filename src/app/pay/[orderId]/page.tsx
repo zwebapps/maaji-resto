@@ -118,7 +118,7 @@ export default async function PayPage({
               className={`h-10 w-10 shrink-0 ${v.logoKey ? "rounded-full object-cover" : ""}`}
             />
             <span
-              className={`block min-w-0 truncate font-serif text-base leading-tight sm:text-lg ${
+              className={`block min-w-0 truncate font-serif text-lg leading-tight ${
                 nameStyled ? "font-semibold uppercase" : "italic"
               }`}
               style={{
@@ -132,8 +132,8 @@ export default async function PayPage({
         </div>
       </header>
 
-      <main className="flex flex-1 flex-col items-center px-4 py-8 sm:py-12">
-        <div className="w-full max-w-md rounded-2xl border border-[var(--menu-surface-text,var(--menu-text))]/10 bg-[var(--menu-surface)] p-6 text-[var(--menu-surface-text,var(--menu-text))] shadow-[0_24px_60px_-30px_rgba(0,0,0,0.5)] sm:p-7">
+      <main className="flex flex-1 flex-col items-center px-4 py-10">
+        <div className="w-full max-w-md rounded-2xl border border-[var(--menu-surface-text,var(--menu-text))]/10 bg-[var(--menu-surface)] p-6 text-[var(--menu-surface-text,var(--menu-text))] shadow-[0_24px_60px_-30px_rgba(0,0,0,0.5)]">
           <h1 className="text-center font-serif text-2xl leading-tight">
             {t.orderHeading(orderNo)}
           </h1>

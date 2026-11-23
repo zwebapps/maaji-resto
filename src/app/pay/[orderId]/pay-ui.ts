@@ -15,7 +15,7 @@ export const FOCUS_RING =
   " focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--menu-surface-text,var(--menu-text))]";
 
 const CTA_BASE =
-  "block w-full rounded-full px-5 py-3.5 text-center text-sm uppercase tracking-[0.08em] transition disabled:cursor-not-allowed disabled:opacity-60 sm:tracking-[0.14em]" +
+  "block w-full rounded-full px-5 py-3.5 text-center text-sm uppercase tracking-[0.14em] transition disabled:cursor-not-allowed disabled:opacity-60" +
   RTL_TYPE;
 
 /** The one dominant action (download the receipt, back to the app). */
@@ -39,7 +39,7 @@ export const CTA_SECONDARY =
 /** Destructive (cancel the order): outlined in the theme's danger colour. */
 export const CTA_DANGER =
   CTA_BASE +
-  " border border-[var(--menu-danger)] font-medium text-[var(--menu-danger)] hover:bg-[var(--menu-danger)]/10 active:scale-[0.985]" +
+  " border border-[var(--menu-danger)] font-medium text-[var(--menu-danger)] hover:opacity-90 active:scale-[0.985]" +
   FOCUS_RING;
 
 /** Text-weight action under the buttons. */
