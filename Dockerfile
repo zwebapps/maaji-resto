@@ -41,6 +41,12 @@ RUN mkdir -p /img-pkgs && cp -a /app/node_modules/.pnpm/@img+* /img-pkgs/
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Guard: secrets and data exports never enter the image (2026-11-23:
+# prod.env was found in production layers AND in the running container).
+# .dockerignore keeps them out; this fails the build loudly if a future
+# change lets one back in.
+RUN bad="$(find /app -path /app/node_modules -prune -o \( -name prod.env -o -name .env -o \( -name '.env.*' ! -name .env.example \) -o -name '*.dump' -o -name '*.tgz' -o -name '*.p8' -o -name '*.p12' -o -name '*.jks' -o -name '*.keystore' -o -name '*.mobileprovision' -o -name play-service-account.json -o -name google-services.json \) -print)"; \
+    if [ -n "$bad" ]; then echo "ERROR: secret/data files in the build context:" $bad; exit 1; fi
 # Generate the Prisma client before `next build` so the tracer bundles the
 # generated files into `.next/standalone/node_modules`. `prisma.config.ts`
 # resolves DATABASE_URL at config-load (used by migrate); generate itself
@@ -116,6 +122,12 @@ COPY --from=deps --chown=nextjs:nodejs /img-pkgs/ /app/node_modules/.pnpm/
 # right owner: /app is root-owned, so the app could not mkdir it at
 # runtime, and a compose volume mounted over it inherits this ownership.
 RUN mkdir -p /app/.image-cache && chown nextjs:nodejs /app/.image-cache
+
+# Same guard on the FINAL image: nothing from .next/standalone, static or
+# public may be a secret or a data export (prod.env reached the running
+# container this way once).
+RUN bad="$(find /app -path /app/node_modules -prune -o \( -name prod.env -o -name .env -o \( -name '.env.*' ! -name .env.example \) -o -name '*.dump' -o -name '*.tgz' -o -name '*.p8' -o -name '*.p12' -o -name '*.jks' -o -name '*.keystore' -o -name '*.mobileprovision' -o -name play-service-account.json -o -name google-services.json \) -print)"; \
+    if [ -n "$bad" ]; then echo "ERROR: secret/data files in the runtime image:" $bad; exit 1; fi
 
 USER nextjs
 EXPOSE 3000
