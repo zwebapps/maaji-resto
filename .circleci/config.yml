@@ -1,0 +1,267 @@
+version: 2.1
+
+# CI + deploy for maaji-freiburg.com (2026-11-23: moved from GitHub Actions;
+# the code stays on GitHub, CircleCI runs the pipeline).
+#
+#   test    every branch: lint → typecheck → migration gate → tests →
+#           axe → Lighthouse budget → Docker image (with the secret guard)
+#   deploy  main only, after test: SSH to the VPS, check out the exact
+#           commit CI validated, `deploy/deploy.sh release`, then verify
+#           the public site.
+#
+# ── One-time setup (CircleCI project settings) ─────────────────────────
+# Environment Variables (values only in the CircleCI project, never here —
+# this repository is public):
+#   VPS_HOST      the server's address
+#   VPS_USER      the SSH login
+#   VPS_APP_DIR   the app's folder on the server
+# SSH Keys → Additional SSH Keys: the deploy key's PRIVATE half, with the
+#   server's address as hostname. `add_ssh_keys` below loads every key
+#   added there, so no fingerprint has to be published in this file.
+# Secrets never travel through CI: prod.env lives only on the VPS.
+# ───────────────────────────────────────────────────────────────────────
+
+executors:
+  node-with-services:
+    docker:
+      # Same Node as the Dockerfile; -browsers ships Chrome for Lighthouse.
+      - image: cimg/node:22.23.4-browsers
+        environment:
+          NEXT_TELEMETRY_DISABLED: "1"
+          # Migrations connect as the superuser; the app + tests as the
+          # least-privilege RLS role (prisma/dev-roles.sql).
+          DATABASE_URL: postgresql://elvoria:elvoria_dev@localhost:5432/elvoria?schema=public
+          APP_DATABASE_URL: postgresql://elvoria_app:elvoria_app_dev@localhost:5432/elvoria?schema=public
+          # `/` resolves its venue via getRestaurantSlug; pin the seeded one
+          # (see the old ci.yml note: the RLS role cannot findFirst a venue).
+          RESTAURANT_SLUG: demo
+          REDIS_URL: redis://localhost:6379
+          SESSION_SECRET: ci-only-not-a-real-secret-32-bytes-minimum-abcdefgh
+          EMAIL_TRANSPORT: mailhog
+          EMAIL_FROM: Elvoria CI <ci@elvoria.local>
+          MAILHOG_SMTP_HOST: localhost
+          MAILHOG_SMTP_PORT: "1025"
+          MAILHOG_API_URL: http://localhost:8025
+      # The RLS/isolation tests need a real Postgres (CLAUDE.md).
+      - image: postgres:16.14-alpine
+        environment:
+          POSTGRES_USER: elvoria
+          POSTGRES_PASSWORD: elvoria_dev
+          POSTGRES_DB: elvoria
+          # Only reachable from this job's containers.
+          POSTGRES_HOST_AUTH_METHOD: trust
+      - image: redis:7.4.11-alpine
+      - image: mailhog/mailhog:v1.0.1
+    resource_class: large
+
+jobs:
+  test:
+    executor: node-with-services
+    steps:
+      - checkout
+
+      - run:
+          name: Enable pnpm (version pinned by package.json "packageManager")
+          command: sudo corepack enable
+
+      - restore_cache:
+          keys:
+            - pnpm-v1-{{ checksum "pnpm-lock.yaml" }}
+      - run:
+          name: Install dependencies
+          command: pnpm install --frozen-lockfile
+      - save_cache:
+          key: pnpm-v1-{{ checksum "pnpm-lock.yaml" }}
+          paths:
+            - ~/.local/share/pnpm/store
+
+      - run:
+          name: Postgres client + wait for the services
+          command: |
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client >/dev/null
+            for i in $(seq 1 30); do
+              pg_isready -h localhost -U elvoria -d elvoria && break
+              sleep 2
+            done
+            pg_isready -h localhost -U elvoria -d elvoria
+
+      - run:
+          name: Generate Prisma client
+          command: pnpm exec prisma generate
+      - run:
+          name: Lint
+          command: pnpm lint
+      - run:
+          name: Typecheck
+          command: pnpm exec tsc --noEmit
+      - run:
+          name: Check migrations (expand-contract gate)
+          command: pnpm check:migrations
+
+      - run:
+          name: Provision the app role (migrations GRANT to it)
+          environment:
+            PGPASSWORD: elvoria_dev
+          command: |
+            psql -v ON_ERROR_STOP=1 -h localhost -U elvoria -d elvoria \<<'SQL'
+            DO $$
+            BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'elvoria_app') THEN
+                CREATE ROLE elvoria_app LOGIN PASSWORD 'elvoria_app_dev';
+              END IF;
+            END $$;
+            SQL
+      - run:
+          name: Apply migrations
+          command: pnpm exec prisma migrate deploy
+      - run:
+          name: Create least-privilege RLS role
+          environment:
+            PGPASSWORD: elvoria_dev
+          command: psql -v ON_ERROR_STOP=1 -h localhost -U elvoria -d elvoria -f prisma/dev-roles.sql
+
+      - run:
+          name: Test
+          command: pnpm test
+      - run:
+          name: Legal-ready gate (advisory, never blocks)
+          command: pnpm check:legal-ready || true
+
+      # ---------- axe accessibility gate (P1-25) ----------
+      - run:
+          name: Playwright version (browser cache key)
+          command: node -p "require('./package.json').devDependencies['@playwright/test'].replace(/^\D+/, '')" > /tmp/playwright-version
+      - restore_cache:
+          keys:
+            - playwright-v1-{{ checksum "/tmp/playwright-version" }}
+      - run:
+          name: Install Playwright Chromium (+ system deps)
+          command: pnpm exec playwright install --with-deps chromium
+      - save_cache:
+          key: playwright-v1-{{ checksum "/tmp/playwright-version" }}
+          paths:
+            - ~/.cache/ms-playwright
+      - run:
+          name: Build the app
+          command: pnpm build
+      - run:
+          name: Seed demo venue
+          command: pnpm seed:demo
+      - run:
+          name: Axe accessibility check on /r/demo
+          command: pnpm test:axe
+
+      # ---------- Lighthouse mobile budget on / (P1-26) ----------
+      # Byte budgets are deterministic (error); timings warn — see
+      # lighthouserc.json.
+      - run:
+          name: Lighthouse CI on /
+          command: pnpm test:lhci
+
+      - store_artifacts:
+          path: playwright-report
+          destination: playwright-report
+      - store_artifacts:
+          path: test-results
+          destination: test-results
+      - store_artifacts:
+          path: lighthouse-report
+          destination: lighthouse-report
+
+      # ---------- Container build ----------
+      # Same Dockerfile as production, never pushed. Its two guard steps
+      # fail the build if prod.env, a dump, an archive or a signing key is
+      # inside the build context or the final image.
+      - setup_remote_docker:
+          version: default
+      - run:
+          name: Build image (secret guard included)
+          command: docker build -t maaji-app:ci .
+
+  deploy:
+    docker:
+      - image: cimg/base:2026.10
+    resource_class: small
+    steps:
+      # Loads every key from Project Settings → SSH Keys (just the deploy
+      # key). No fingerprint here: the repository is public.
+      - add_ssh_keys
+      - run:
+          name: Trust the VPS host key
+          command: |
+            mkdir -p ~/.ssh
+            ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+      - run:
+          name: Deploy the validated commit over SSH
+          # A build plus migrations on a small box is not fast.
+          no_output_timeout: 25m
+          command: |
+            set -euo pipefail
+            : "${VPS_HOST:?set VPS_HOST in the CircleCI project}"
+            : "${VPS_USER:?set VPS_USER in the CircleCI project}"
+            : "${VPS_APP_DIR:?set VPS_APP_DIR in the CircleCI project}"
+            ssh -o BatchMode=yes "$VPS_USER@$VPS_HOST" \
+              "DEPLOY_SHA='$CIRCLE_SHA1' APP_DIR='$VPS_APP_DIR' bash -s" \<<'REMOTE'
+            set -euo pipefail
+            cd "$APP_DIR"
+
+            echo "→ fetching ${DEPLOY_SHA}"
+            git fetch --all --prune
+            # The box is a deployment target, never edited: the validated
+            # commit wins outright.
+            git reset --hard "${DEPLOY_SHA}"
+
+            echo "→ host deps (deploy.sh runs prisma + tsx on the host)"
+            pnpm install --frozen-lockfile
+
+            echo "→ release: build → migrate → seed → up"
+            ./deploy/deploy.sh release
+
+            COMPOSE="docker compose -f deploy/docker-compose.prod.yml --env-file prod.env"
+            echo "→ container status"
+            $COMPOSE ps
+
+            echo "→ waiting for the app to answer (inside the container)"
+            for i in $(seq 1 30); do
+              if $COMPOSE exec -T app wget -q --spider http://127.0.0.1:3000/ 2>/dev/null; then
+                echo "app is up"
+                # The secrets file must never be inside the running image.
+                if $COMPOSE exec -T app test -e /app/prod.env; then
+                  echo "ERROR: /app/prod.env is inside the running container"
+                  exit 1
+                fi
+                echo "no /app/prod.env in the running container"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "app did not answer after 60s — logs:"
+            $COMPOSE logs --tail=60 app
+            exit 1
+            REMOTE
+      - run:
+          name: Verify the public site over HTTPS
+          command: |
+            for i in $(seq 1 10); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' https://maaji-freiburg.com/ || true)
+              if [ "$code" = "200" ]; then
+                echo "public site OK (HTTP $code)"
+                exit 0
+              fi
+              echo "attempt $i: HTTP $code"
+              sleep 6
+            done
+            echo "public site did not return 200 — DNS, firewall (80/443) or TLS issue"
+            exit 1
+
+workflows:
+  test-and-deploy:
+    jobs:
+      - test
+      - deploy:
+          requires:
+            - test
+          filters:
+            branches:
+              only: main
