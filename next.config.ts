@@ -63,6 +63,32 @@ const CSP = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // The runbook MDX files are read at runtime by a computed path (marked
+  // `turbopackIgnore` in src/lib/runbooks.ts so the bundler stops tracing
+  // the whole project) — ship exactly those files with the admin page.
+  outputFileTracingIncludes: {
+    "/admin/runbooks": ["./src/content/runbooks/*.mdx"],
+  },
+  // Hard stop, whatever a future runtime path makes the tracer think:
+  // local data exports (customer DB dumps, upload archives), the mobile
+  // app, customer uploads (a production volume, never baked into the
+  // image) and repo-only material never enter .next/standalone
+  // (2026-11-21: release/maaji.dump was found there).
+  outputFileTracingExcludes: {
+    "/*": [
+      "./release/**/*",
+      "./mobile/**/*",
+      "./public/uploads/**/*",
+      "./.image-cache/**/*",
+      "./e2e/**/*",
+      "./docs/**/*",
+      "./infra/**/*",
+      "./deploy/**/*",
+      "**/*.dump",
+      "**/*.tgz",
+      "**/*.sql.gz",
+    ],
+  },
   // No "x-powered-by: Next.js" on every response — it only tells a scanner
   // which framework (and so which advisories) to try.
   poweredByHeader: false,

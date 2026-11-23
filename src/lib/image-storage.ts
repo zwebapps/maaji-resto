@@ -18,10 +18,14 @@ import { deleteVariants } from "./image-cache";
  * backups (it is now the only home of customer images).
  */
 
-export const UPLOAD_ROOT = path.join(process.cwd(), "public", "uploads");
+// `turbopackIgnore` on every runtime path in this file: these are the
+// customer uploads (a mounted volume in production). Without the marker
+// Next traced the whole project — uploads, local DB dumps — into
+// .next/standalone. See also outputFileTracingExcludes in next.config.ts.
+export const UPLOAD_ROOT = path.join(/*turbopackIgnore: true*/ process.cwd(), "public", "uploads");
 
 function resolveSafe(key: string): string {
-  const full = path.resolve(UPLOAD_ROOT, key);
+  const full = path.resolve(/*turbopackIgnore: true*/ UPLOAD_ROOT, key);
   if (full !== UPLOAD_ROOT && !full.startsWith(UPLOAD_ROOT + path.sep)) {
     throw new Error("image-storage: key escapes upload root");
   }
@@ -31,14 +35,14 @@ function resolveSafe(key: string): string {
 /** Write (or overwrite) an object's bytes, creating parent dirs. */
 export async function writeUpload(key: string, bytes: Buffer): Promise<void> {
   const full = resolveSafe(key);
-  await mkdir(path.dirname(full), { recursive: true });
-  await writeFile(full, bytes);
+  await mkdir(/*turbopackIgnore: true*/ path.dirname(full), { recursive: true });
+  await writeFile(/*turbopackIgnore: true*/ full, bytes);
 }
 
 /** Read an object's bytes, or null if it is not on disk. */
 export async function readUpload(key: string): Promise<Buffer | null> {
   try {
-    return await readFile(resolveSafe(key));
+    return await readFile(/*turbopackIgnore: true*/ resolveSafe(key));
   } catch {
     return null;
   }
@@ -47,14 +51,14 @@ export async function readUpload(key: string): Promise<Buffer | null> {
 /** Copy one object to a new key (used when cloning a template photo). */
 export async function copyUpload(srcKey: string, destKey: string): Promise<void> {
   const dest = resolveSafe(destKey);
-  await mkdir(path.dirname(dest), { recursive: true });
-  await copyFile(resolveSafe(srcKey), dest);
+  await mkdir(/*turbopackIgnore: true*/ path.dirname(dest), { recursive: true });
+  await copyFile(/*turbopackIgnore: true*/ resolveSafe(srcKey), dest);
 }
 
 /** Delete one object and every resized variant of it. */
 export async function deleteUpload(key: string): Promise<void> {
   try {
-    await unlink(resolveSafe(key));
+    await unlink(/*turbopackIgnore: true*/ resolveSafe(key));
   } catch {
     /* already gone */
   }
@@ -65,6 +69,6 @@ export async function deleteUpload(key: string): Promise<void> {
 
 /** Recursively delete everything under a key prefix (tenant purge). */
 export async function deletePrefix(prefix: string): Promise<void> {
-  await rm(resolveSafe(prefix), { recursive: true, force: true });
+  await rm(/*turbopackIgnore: true*/ resolveSafe(prefix), { recursive: true, force: true });
   await deleteVariants(prefix);
 }

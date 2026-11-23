@@ -42,3 +42,17 @@ themes images
 
 # Dev-only DB seed
 prisma/dev-roles.sql
+
+# Local data exports — customer database dumps and upload archives. Never
+# part of an image (2026-11-21: a dump was found in .next/standalone).
+release
+*.dump
+*.tgz
+# Customer uploads + resized cache: production volumes (docker-compose.prod.yml),
+# never part of the image.
+public/uploads
+.image-cache
+
+# The mobile app is built by EAS / Xcode, never by the server image (and
+# its node_modules / ios build would bloat the context by gigabytes).
+mobile

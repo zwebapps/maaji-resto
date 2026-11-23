@@ -42,7 +42,12 @@ export const DEFAULT_CACHE_DIRNAME = ".image-cache";
  */
 export function cacheRoot(): string {
   const configured = process.env.IMAGE_CACHE_DIR;
-  return configured ? path.resolve(configured) : path.join(process.cwd(), DEFAULT_CACHE_DIRNAME);
+  // `turbopackIgnore`: `process.cwd()` is the project root at build time,
+  // which made the bundler trace (and copy) the whole project — see
+  // readVariant. These paths are runtime-only.
+  return configured
+    ? path.resolve(/*turbopackIgnore: true*/ configured)
+    : path.join(/*turbopackIgnore: true*/ process.cwd(), DEFAULT_CACHE_DIRNAME);
 }
 
 /**
@@ -52,7 +57,7 @@ export function cacheRoot(): string {
  */
 function resolveSafe(relative: string): string {
   const root = cacheRoot();
-  const full = path.resolve(root, relative);
+  const full = path.resolve(/*turbopackIgnore: true*/ root, relative);
   if (full !== root && !full.startsWith(root + path.sep)) {
     throw new Error("image-cache: path escapes cache root");
   }
@@ -61,13 +66,16 @@ function resolveSafe(relative: string): string {
 
 /** Absolute path of one cached variant. */
 export function variantPath(key: string, width: number, fmt: string): string {
-  return resolveSafe(path.join(key, `${width}.${fmt}`));
+  return resolveSafe(path.join(/*turbopackIgnore: true*/ key, `${width}.${fmt}`));
 }
 
 /** Cached bytes, or null when this variant has not been rendered yet. */
 export async function readVariant(key: string, width: number, fmt: string): Promise<Buffer | null> {
   try {
-    return await readFile(variantPath(key, width, fmt));
+    // `turbopackIgnore`: a runtime path. Without it Next traces the WHOLE
+    // project into `.next/standalone` — once that swept a local database
+    // dump (release/maaji.dump) into the build output.
+    return await readFile(/*turbopackIgnore: true*/ variantPath(key, width, fmt));
   } catch {
     // Missing (the common case), unreadable, or an escaping key — all
     // collapse to "not cached", and the caller re-encodes.
@@ -92,13 +100,13 @@ export async function writeVariant(
 ): Promise<boolean> {
   try {
     const full = variantPath(key, width, fmt);
-    await mkdir(path.dirname(full), { recursive: true });
+    await mkdir(/*turbopackIgnore: true*/ path.dirname(full), { recursive: true });
     const tmp = `${full}.${randomBytes(6).toString("hex")}.tmp`;
-    await writeFile(tmp, bytes);
+    await writeFile(/*turbopackIgnore: true*/ tmp, bytes);
     try {
-      await rename(tmp, full);
+      await rename(/*turbopackIgnore: true*/ tmp, full);
     } catch (err) {
-      await rm(tmp, { force: true }).catch(() => {});
+      await rm(/*turbopackIgnore: true*/ tmp, { force: true }).catch(() => {});
       throw err;
     }
     return true;
@@ -114,7 +122,7 @@ export async function writeVariant(
  */
 export async function deleteVariants(keyOrPrefix: string): Promise<void> {
   try {
-    await rm(resolveSafe(keyOrPrefix), { recursive: true, force: true });
+    await rm(/*turbopackIgnore: true*/ resolveSafe(keyOrPrefix), { recursive: true, force: true });
   } catch {
     /* nothing cached, or an escaping key — nothing to do either way */
   }

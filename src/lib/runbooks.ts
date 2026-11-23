@@ -38,12 +38,16 @@ export interface Runbook {
 }
 
 export async function readRunbook(name: RunbookName, dir = RUNBOOK_DIR): Promise<Runbook> {
-  const raw = await readFile(path.join(dir, `${name}.mdx`), "utf8");
+  // `turbopackIgnore` on the runtime paths: without it Next traced the
+  // WHOLE project into .next/standalone (local DB dumps, the iOS build…).
+  // The runbooks themselves ship via `outputFileTracingIncludes` in
+  // next.config.ts.
+  const raw = await readFile(/*turbopackIgnore: true*/ path.join(dir, `${name}.mdx`), "utf8");
   return parseRunbook(name, raw);
 }
 
 export async function listRunbooks(dir = RUNBOOK_DIR): Promise<Runbook[]> {
-  const files = (await readdir(dir))
+  const files = (await readdir(/*turbopackIgnore: true*/ dir))
     .filter((f) => f.endsWith(".mdx"))
     .map((f) => f.replace(/\.mdx$/, ""));
   const known = files.filter((n): n is RunbookName =>
