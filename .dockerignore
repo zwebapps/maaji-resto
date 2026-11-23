@@ -30,6 +30,29 @@ next-env.d.ts
 .env
 .env.*
 !.env.example
+# The production secrets file sits at the repo root on the VPS (deploy.sh,
+# docker-compose.prod.yml env_file) and is read at RUNTIME only. It was
+# copied into the builder stage by `COPY . .` (2026-11-23, found in the
+# server's containerd snapshots) — never again.
+prod.env
+**/prod.env
+*.env
+!deploy/prod.env.template
+
+# Signing keys and store credentials (mobile release, Apple, Google).
+play-service-account.json
+**/play-service-account.json
+google-services.json
+**/google-services.json
+GoogleService-Info.plist
+**/GoogleService-Info.plist
+**/*.p8
+**/*.p12
+**/*.pem
+**/*.key
+**/*.jks
+**/*.keystore
+**/*.mobileprovision
 
 # Project docs and non-app assets
 BACKLOG.md
