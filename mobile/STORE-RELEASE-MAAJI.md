@@ -113,15 +113,21 @@ certificate, keystore, `.p8`/`.p12` or password.**
 
 ## Store listing assets (checklist)
 
+Ready-to-upload files live in [`store/`](store/) (2026-11-24). Screenshots are
+from the **Release** build against the live server (`maaji-freiburg.com`) in
+the iOS Simulator, status bar set to 9:41 / full battery, German UI. Retake
+them when the menu or the home banner changes: build Release for the
+simulator, then `xcrun simctl io <device> screenshot <file>`.
+
 ### Both stores
 - [ ] Privacy policy URL: `https://maaji-freiburg.com/legal/privacy`
 - [ ] Support URL / contact: `https://maaji-freiburg.com` + restaurant email and phone
 - [ ] Imprint (DE requirement for the seller): `https://maaji-freiburg.com/legal/impressum`
-- [ ] App icon: from the build (1024² for Apple is taken from the binary; Play needs a separate **512×512 PNG**)
+- [x] App icon: from the build (1024² for Apple is taken from the binary); Play's **512×512 PNG** → `store/android/icon-512.png`
 
 ### Apple App Store
-- [ ] Screenshots **iPhone 6.9"** (1320×2868) — required, 3–10
-- [ ] Screenshots **iPad 13"** (2064×2752) — required, because the app supports iPad (`supportsTablet: true`)
+- [x] Screenshots **iPhone 6.9"** (1320×2868) — `store/ios/iphone-6.9/` (6)
+- [x] Screenshots **iPad 13"** (2064×2752) — `store/ios/ipad-13/` (4); required because the app supports iPad (`supportsTablet: true`)
 - [ ] Subtitle (≤30), promotional text (≤170), description, keywords (≤100)
 - [ ] Category: **Food & Drink**; secondary optional: Lifestyle
 - [ ] Age rating questionnaire: no alcohol/tobacco sales, no user-generated public content → 4+
@@ -130,9 +136,9 @@ certificate, keystore, `.p8`/`.p12` or password.**
 - [ ] Review notes + demo account (see below)
 
 ### Google Play
-- [ ] Phone screenshots: 2–8, 1080×1920 or larger (9:16)
+- [x] Phone screenshots: 1080×1920 (9:16) — `store/android/phone/` (6, the iPhone shots on the brand green)
 - [ ] 7" and 10" tablet screenshots (recommended, the app runs on tablets)
-- [ ] **Feature graphic 1024×500**
+- [x] **Feature graphic 1024×500** — `store/android/feature-graphic-1024x500.png`
 - [ ] Short description (≤80), full description (≤4000)
 - [ ] Category: **Food & Drink**; contact email
 - [ ] Content rating questionnaire (IARC)
