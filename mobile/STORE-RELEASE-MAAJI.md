@@ -86,22 +86,39 @@ certificate, keystore, `.p8`/`.p12` or password.**
   of `elvoriatech`. Log in as Elvoria, or invite zahoor1989 to the
   organisation on expo.dev, before `eas build`.
 
-## Android upload key plan (Play App Signing)
+## Android: local build + upload key (decided 2026-11-24 — no EAS for Maaji)
 
-1. `npx eas-cli build -p android --profile production` (logged in for
-   `elvoriatech`). When asked "Generate a new Android Keystore?" answer
-   **yes**: EAS creates the **upload key** and stores it.
-2. Back it up once: `npx eas-cli credentials -p android` → Download
-   keystore. Keep the `.jks` and its passwords in your password manager,
-   never in the repo.
-3. Play Console → create "Maaji Restaurant" → **Play App Signing** stays on
-   (default): Google holds the app signing key, EAS's key only uploads.
-   A lost upload key can then be reset through Play support.
-4. Upload the first `.aab` by hand to **Internal testing**, fill Data safety
-   + content rating, then create the service account and save its JSON as
-   `mobile/play-service-account.json` for `npx eas-cli submit -p android --latest`.
-5. For the dispatch-QR app link: Play Console → App signing → SHA-256
-   fingerprint into `public/.well-known/assetlinks.json` (see BUILDS.md).
+Maaji's Android app is built on this Mac with Gradle and uploaded by hand to
+the Google Play developer account. EAS is used for Guessto only.
+
+- **Upload key:** `~/keys/maaji-upload.jks` (PKCS12, alias `maaji-upload`,
+  RSA 2048, valid until 2054), created 2026-11-24. Upload-certificate
+  SHA-256: `51:B7:84:DE:B0:94:B6:4A:35:0E:DD:E7:14:85:E8:47:61:FD:51:E1:35:49:89:29:D9:66:75:EA:42:F4:0E:3F`.
+  Path, alias and passwords are in `~/.gradle/gradle.properties`
+  (`MAAJI_UPLOAD_*`). **Back up the .jks and the password in your password
+  manager** — every update must be signed with this key. Never commit it.
+- **Signing:** `plugins/withReleaseSigning.js` (in `app.config.js`) makes the
+  release build use that key; without the properties it falls back to the
+  debug key, which Play rejects.
+- **Play App Signing** stays on (default): Google holds the app signing key,
+  ours only uploads. A lost upload key can be reset through Play support.
+
+Build (from `mobile/`):
+
+```bash
+npx expo prebuild -p android --no-install
+cd android && EXPO_PUBLIC_API_URL=https://maaji-freiburg.com EXPO_PUBLIC_VENUE_TIMEZONE=Europe/Berlin \
+  ./gradlew :app:bundleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a
+```
+
+Output: `android/app/build/outputs/bundle/release/app-release.aab`.
+For every update raise `expo.android.versionCode` in `app.json` by one
+(Play refuses a number it has seen; 1.0.0 shipped as **1**), and for a new
+version name run `pnpm brand:mobile --venue maaji-restaurant --version 1.0.1`.
+
+For the dispatch-QR app link: Play Console → App signing → the **app signing
+key** SHA-256 (Google's, not ours) into `public/.well-known/assetlinks.json`
+(see BUILDS.md).
 
 ## ⛔ Only you can do (accounts, credentials, money)
 
@@ -111,7 +128,7 @@ certificate, keystore, `.p8`/`.p12` or password.**
 | 2 | Apple Developer | Register the bundle ID (EAS can do it), capabilities: Push Notifications, Sign in with Apple. Time-sensitive notifications are in the entitlements. |
 | 3 | Apple Developer | APNs key for push (`eas credentials` → iOS → Push key), same as BACKLOG P7-11b. |
 | 4 | Google Play Console | Create app "Maaji Restaurant", default language German, app (not game), free. |
-| 5 | Google Play Console | Upload the FIRST `.aab` by hand (internal testing), then set up a service account and save its JSON as `mobile/play-service-account.json` for `eas submit`. |
+| 5 | Google Play Console | Upload the `.aab` by hand (internal testing first, then production). |
 | 6 | Firebase | Android app `de.maajirestaurant.app` → download `google-services.json` into `mobile/` (FCM push). Without it Android builds, but receives no push. |
 | 7 | Server | Live Stripe / PayPal keys + webhook secret / webhook ID (see BUILDS.md table) before real guests pay in the app. |
 | 8 | Optional | Apple Pay (`APPLE_MERCHANT_ID`), Google sign-in client IDs, universal links (`APPLE_UNIVERSAL_LINKS=1`) — each documented in BUILDS.md, all off by default. |

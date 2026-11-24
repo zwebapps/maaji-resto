@@ -153,6 +153,9 @@ module.exports = ({ config }) => {
   const plugins = [
     ...(config.plugins ?? []),
     (c) => withHomeScreenName(c, homeScreenName),
+    // Release AABs are signed with the Play upload key from Gradle
+    // properties (~/.gradle/gradle.properties), never the debug key.
+    "./plugins/withReleaseSigning",
     // The launch screen. Since SDK 52 the root `splash` key is ignored —
     // without this plugin iOS pointed at a splash image that was never
     // generated and Android fell back to a system default, so guests saw

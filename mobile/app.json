@@ -17,6 +17,7 @@
       }
     },
     "android": {
+      "versionCode": 1,
       "predictiveBackGestureEnabled": false,
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO",
