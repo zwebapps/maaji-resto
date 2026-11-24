@@ -42,3 +42,6 @@ yarn-error.*
 
 # Google Play upload credential for `eas submit` — never commit.
 play-service-account.json
+
+# Gradle output of local native modules
+modules/*/android/build/
