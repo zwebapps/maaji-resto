@@ -15,7 +15,11 @@ export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
   fullyParallel: false,
-  reporter: process.env.CI ? [["github"], ["list"]] : "list",
+  // CI (CircleCI) keeps an HTML report; the job stores playwright-report/
+  // as an artifact.
+  reporter: process.env.CI
+    ? [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]]
+    : "list",
   use: {
     baseURL: "http://127.0.0.1:3000",
     ignoreHTTPSErrors: false,

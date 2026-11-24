@@ -24,7 +24,8 @@ version: 2.1
 executors:
   node-with-services:
     docker:
-      # Same Node as the Dockerfile; -browsers ships Chrome for Lighthouse.
+      # Same Node as the Dockerfile. -browsers has the Chromium system libs;
+      # Lighthouse uses Playwright's Chromium (see the Lighthouse step).
       - image: cimg/node:22.23.4-browsers
         environment:
           NEXT_TELEMETRY_DISABLED: "1"
@@ -155,9 +156,18 @@ jobs:
       # ---------- Lighthouse mobile budget on / (P1-26) ----------
       # Byte budgets are deterministic (error); timings warn — see
       # lighthouserc.json.
+      # cimg/node:*-browsers ships no Google Chrome (GitHub runners did), so
+      # Lighthouse runs on the Chromium Playwright installed above — no
+      # second browser download. --no-sandbox: Chrome's sandbox cannot set
+      # up user namespaces inside the CircleCI Docker container (Playwright
+      # already launches its Chromium that way for the axe step).
       - run:
           name: Lighthouse CI on /
-          command: pnpm test:lhci
+          command: |
+            export CHROME_PATH="$(node -p "require('@playwright/test').chromium.executablePath()")"
+            echo "Lighthouse browser: $CHROME_PATH"
+            test -x "$CHROME_PATH"
+            pnpm test:lhci --collect.settings.chromeFlags="--no-sandbox"
 
       - store_artifacts:
           path: playwright-report
