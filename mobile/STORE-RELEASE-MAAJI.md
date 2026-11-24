@@ -137,7 +137,7 @@ simulator, then `xcrun simctl io <device> screenshot <file>`.
 
 ### Google Play
 - [x] Phone screenshots: 1080×1920 (9:16) — `store/android/phone/` (6, the iPhone shots on the brand green)
-- [ ] 7" and 10" tablet screenshots (recommended, the app runs on tablets)
+- [x] 7" and 10" tablet screenshots — `store/android/tablet/` (4, 2064×2752; the same set fits both slots)
 - [x] **Feature graphic 1024×500** — `store/android/feature-graphic-1024x500.png`
 - [ ] Short description (≤80), full description (≤4000)
 - [ ] Category: **Food & Drink**; contact email
