@@ -180,7 +180,7 @@ Wählen Sie den Betrag, schreiben Sie eine persönliche Nachricht dazu und versc
 • Feier oder Firmenevent? Fragen Sie unser Catering an
 
 👤 IHR KONTO
-• Anmelden mit Google oder E-Mail – Name, Telefon und Adresse werden beim nächsten Mal automatisch ausgefüllt
+• Anmelden mit E-Mail – Name, Telefon und Adresse werden beim nächsten Mal automatisch ausgefüllt
 • Stimmt etwas mit Ihrer Bestellung nicht? Melden Sie es über „Reklamationen“, gern mit Foto
 • Konto jederzeit in der App oder unter maaji-freiburg.com/account/delete löschen
 
@@ -229,7 +229,7 @@ Choose the amount, add a personal message and give someone a meal at Maaji.
 • Planning a party or a company event? Ask us about catering
 
 👤 YOUR ACCOUNT
-• Sign in with Google or email – your name, phone and address are filled in next time
+• Sign in with email – your name, phone and address are filled in next time
 • Something wrong with your order? Tell us under "Complaints", with a photo if you like
 • Delete your account in the app or at maaji-freiburg.com/account/delete at any time
 
@@ -242,10 +242,9 @@ Maaji – Indian & Pakistani delicacies in Freiburg. Served with love.
 
 ## Before you paste — three things to confirm
 
-1. **Google sign-in** is off by default (BUILDS.md: needs client IDs). If it
-   is not switched on in the build you upload, change "Anmelden mit Google
-   oder E-Mail" / "Sign in with Google or email" to "Anmelden mit E-Mail" /
-   "Sign in with email" in both Play descriptions.
+1. **Google sign-in** is not in the Android build (no Google client IDs at
+   build time), so the Play texts say "Anmelden mit E-Mail" / "Sign in
+   with email". If you switch Google sign-in on later, add it back.
 2. **Delivery** — the copy says "in unser Liefergebiet in Freiburg". If you
    deliver beyond Freiburg, name the area.
 3. **Dish list** — "Suppen, Chat-Bowls, Currys, Biryani, Wraps, Naan" matches
