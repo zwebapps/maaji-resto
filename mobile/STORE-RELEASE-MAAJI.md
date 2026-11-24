@@ -63,7 +63,12 @@ certificate, keystore, `.p8`/`.p12` or password.**
 
 ## Status 2026-11-23
 
-- **iOS:** build 1.0.0 (1) installed and running on the owner's iPhone
+- **iOS (2026-11-24):** App Store Connect app created ("Maaji Restaurant",
+  SKU `maaji-restaurant-ios`). Build **1.0.0 (1) uploaded** from
+  `ios/build/Maaji.xcarchive` and processing. Warnings only: dSYMs missing
+  for prebuilt frameworks (crash reports for those lack symbols) and the
+  iOS 27 SDK becomes mandatory for uploads from April 2027.
+- **iOS (earlier):** build 1.0.0 (1) installed and running on the owner's iPhone
   (Xcode, team NFHFDX372C, push + Sign in with Apple). App Store archive
   built (`mobile/ios/build/Maaji.xcarchive`, git-ignored). **Upload blocked:**
   App Store Connect has no app with bundle ID `de.maajirestaurant.app` in
