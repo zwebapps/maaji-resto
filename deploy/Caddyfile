@@ -3,20 +3,37 @@
 #
 # There is NO CDN in front of this: Cloudflare was dropped (single
 # restaurant, one small VPS), so this is the only edge and the app is the
-# only origin. Two consequences worth knowing:
+# only origin. What that means here (full picture: deploy/SECURITY.md):
 #
 #  1. Security headers (HSTS, CSP, X-Frame-Options, Referrer-Policy,
 #     Permissions-Policy) come from the APP, in next.config.ts, so they
 #     apply identically in local dev and in prod and cannot drift from
 #     the code. Do not duplicate them here.
-#  2. Rate limiting is also the app's job (src/lib/rate-limit.ts, Redis
-#     backed, with an in-process fallback if Redis blips). Caddy has no
-#     built-in rate limiter — it needs an xcaddy build with the
-#     caddy-ratelimit module — so do not assume an edge limit exists.
+#  2. This Caddy is a custom build (deploy/caddy/Dockerfile) with two
+#     modules the stock image lacks:
+#       - coraza_waf: the OWASP Core Rule Set in front of every dynamic
+#         request. WAF_MODE (prod.env) is DetectionOnly by default — it
+#         LOGS what it would block, it blocks nothing. Switch to "On" only
+#         after a few days of clean logs (SECURITY.md, "Turning the WAF on").
+#       - rate_limit: per-IP limits on the routes worth attacking (logins,
+#         emailed codes, order/booking posts). The app keeps its own Redis
+#         limits too (src/lib/rate-limit.ts); this edge layer stops a flood
+#         before it costs an app request, a DB query or an email.
+#  3. Client IP = the TCP peer ({remote_host}); correct because nothing
+#     sits in front. If a CDN/proxy is ever added, configure
+#     trusted_proxies first or every guest shares the proxy's limit.
 #
-# APP_DOMAIN comes from the compose environment (prod.env). Images are
-# served by the app itself (the /img route resizes from disk and caches
-# the variants), so there is no separate image host to proxy.
+# APP_DOMAIN, WAF_MODE and LOGS_ALLOW_IPS come from the compose environment
+# (prod.env). Images are served by the app itself (the /img route resizes
+# from disk and caches the variants), so there is no separate image host.
+
+{
+	# Both modules are third-party handlers: Caddy needs to be told where
+	# they sit in the handler chain. WAF first (inspect before anything
+	# else runs), rate limit right after it.
+	order coraza_waf first
+	order rate_limit after coraza_waf
+}
 
 # www -> apex, permanently. DNS has a www A record, and without a site
 # block for it Caddy would neither answer nor hold a certificate for
@@ -27,12 +44,98 @@ www.{$APP_DOMAIN} {
 
 {$APP_DOMAIN} {
 	encode zstd gzip
+	header -Server
 
 	# Bulk menu-photo uploads post multipart bodies; this matches the
 	# 50 MB server-action limit in next.config.ts. Without a cap, the
 	# only limit on an upload is the disk.
 	request_body {
 		max_size 50MB
+	}
+
+	# --- WAF -------------------------------------------------------------
+	# Skipped for static assets (nothing to attack, and it saves CPU on
+	# every photo) and for the payment webhooks: Stripe/PayPal sign their
+	# bodies and the app verifies the signature — a false positive there
+	# would silently drop a payment confirmation.
+	@waf {
+		not path /_next/static/* /img/* /uploads/* /brand/* /app-slider/*
+		not path *.png *.jpg *.jpeg *.webp *.avif *.svg *.ico *.woff2 *.css *.js *.map
+		not path /api/stripe/webhook /api/stripe/own-webhook /api/paypal/webhook
+	}
+	coraza_waf @waf {
+		load_owasp_crs
+		directives `
+			Include @coraza.conf-recommended
+			SecRuleEngine {$WAF_MODE:DetectionOnly}
+			# Uploads go up to 50 MB (above). Inspect the first part and let
+			# the rest through rather than rejecting a big photo batch.
+			SecRequestBodyLimit 52428800
+			SecRequestBodyLimitAction ProcessPartial
+			SecResponseBodyAccess Off
+			# Audit log to stdout (docker logs / Dozzle). Parts A,H,Z only:
+			# who, when and which rule — never headers (session cookies) or
+			# bodies (guests' names, emails, addresses).
+			SecAuditEngine RelevantOnly
+			SecAuditLogParts AHZ
+			SecAuditLogType Serial
+			SecAuditLogFormat JSON
+			SecAuditLog /dev/stdout
+			Include @crs-setup.conf.example
+			# The staff API uses PUT/PATCH/DELETE; CRS allows only
+			# GET/HEAD/POST/OPTIONS by default.
+			SecAction "id:900200,phase:1,pass,nolog,setvar:'tx.allowed_methods=GET HEAD POST OPTIONS PUT PATCH DELETE'"
+			Include @owasp_crs/*.conf
+		`
+	}
+
+	# --- Rate limits (per client IP) ---------------------------------------
+	# Sized for a restaurant: many guests can share the restaurant's wifi
+	# (one IP), so the limits stop scripts, not a busy evening. Over the
+	# limit = 429 with Retry-After; the app and the mobile app show their
+	# normal "try again" message.
+	rate_limit {
+		# Password guessing: staff + guest logins, sign-up, device pairing.
+		zone login {
+			match {
+				method POST
+				path /api/auth/login /api/auth/customer/login /api/auth/customer/register /api/v1/auth/device*
+			}
+			key {remote_host}
+			events 20
+			window 1m
+		}
+		# Anything that sends an email or SMS on request: abuse costs money
+		# and the sender reputation.
+		zone mail {
+			match {
+				method POST
+				path /api/orders/email-code /api/auth/reset/request /api/auth/customer/reset/request /api/auth/verify/request
+			}
+			key {remote_host}
+			events 20
+			window 10m
+		}
+		# Guessing a 6-digit emailed code.
+		zone code {
+			match {
+				method POST
+				path /api/orders/email-code/verify
+			}
+			key {remote_host}
+			events 30
+			window 10m
+		}
+		# Order / booking / catering / gift-card spam.
+		zone submit {
+			match {
+				method POST
+				path /api/orders /api/reservations /api/catering /api/v1/gift-cards /api/v1/orders /api/v1/reservations
+			}
+			key {remote_host}
+			events 30
+			window 1m
+		}
 	}
 
 	# Next's image optimizer is unused (photos go through the app's own
@@ -43,9 +146,13 @@ www.{$APP_DOMAIN} {
 	}
 
 	# Live logs (Dozzle, opt-in — see docker-compose.prod.yml). Dozzle
-	# serves its own login page; when the profile is off this answers 502
-	# for /logs and nothing else changes.
+	# serves its own login page; on top of that only LOGS_ALLOW_IPS may
+	# reach it (default: everyone, i.e. login only — set your office IP in
+	# prod.env to close it to the rest of the internet). When the profile
+	# is off this answers 502 for /logs and nothing else changes.
 	handle /logs* {
+		@logs_denied not remote_ip {$LOGS_ALLOW_IPS:0.0.0.0/0 ::/0}
+		respond @logs_denied 403
 		reverse_proxy dozzle:8080
 	}
 

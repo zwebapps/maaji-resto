@@ -51,6 +51,12 @@ case "${1:-}" in
       docker tag "${IMAGE}" "${IMAGE%%:*}:${GIT_SHA}"
       echo "→ also tagged ${IMAGE%%:*}:${GIT_SHA}"
     fi
+
+    # The edge Caddy (Coraza WAF + rate limits, deploy/caddy/Dockerfile) is
+    # a custom build too. The layer cache makes this a no-op unless
+    # deploy/caddy/ changed; the first build takes a few minutes.
+    echo "→ building edge caddy"
+    "${COMPOSE[@]}" build caddy
     ;;
   migrate)
     # Gate first: refuses destructive migration shapes.
@@ -97,6 +103,16 @@ case "${1:-}" in
         rm -f "${DOZZLE_USERS_FILE}.tmp"
         echo "! could not generate the dozzle users file — logs UI stays off this release"
       fi
+    fi
+    # Validate the Caddyfile with the image that will serve it BEFORE
+    # anything is replaced: a typo in a WAF directive must fail the release
+    # here, not take the site down with a crash-looping edge.
+    if ! "${COMPOSE[@]}" run --rm --no-deps -T caddy \
+        caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null; then
+      echo "! Caddyfile does not validate with the edge image — nothing was changed"
+      "${COMPOSE[@]}" run --rm --no-deps -T caddy \
+        caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 | tail -5
+      exit 1
     fi
     "${COMPOSE[@]}" up -d
     if [ "${DOZZLE_RECREATE:-0}" = "1" ]; then

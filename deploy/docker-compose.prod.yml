@@ -6,7 +6,7 @@
 # as the owner role, no connection pooler in between.
 # This file runs only the stateless/replaceable pieces:
 #
-#   caddy     :80/:443  TLS origin behind Cloudflare, proxies to app
+#   caddy     :80/:443  TLS edge (no CDN): WAF + rate limits, proxies to app
 #   app       (internal) Next.js standalone image → remote Postgres
 #   redis     (internal) rate limits, webhook idempotency
 #
@@ -35,7 +35,13 @@ name: maaji-prod
 
 services:
   caddy:
-    image: caddy:2-alpine
+    # Custom build: stock Caddy + Coraza WAF + rate-limit modules (see
+    # deploy/caddy/Dockerfile and deploy/SECURITY.md). `deploy.sh build`
+    # builds it on the VPS; `up` never pulls it.
+    image: ${CADDY_IMAGE:-edge-caddy:2.11.9-waf}
+    build:
+      context: ./caddy
+    pull_policy: never
     restart: unless-stopped
     ports:
       - "80:80"
@@ -46,6 +52,12 @@ services:
       - caddy_config:/config
     environment:
       APP_DOMAIN: ${APP_DOMAIN}
+      # DetectionOnly = log what the WAF would block, block nothing. "On"
+      # enforces. Flip only after reading the logs (SECURITY.md).
+      WAF_MODE: ${WAF_MODE:-DetectionOnly}
+      # Space-separated IPs/CIDRs allowed to reach /logs (Dozzle). Unset =
+      # everyone (Dozzle's own login still applies).
+      LOGS_ALLOW_IPS: ${LOGS_ALLOW_IPS:-0.0.0.0/0 ::/0}
     depends_on:
       - app
 
