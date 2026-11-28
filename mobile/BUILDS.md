@@ -694,27 +694,13 @@ holding two bags. Nothing breaks without it.
 
 ### Android — `assetlinks.json` (we can finish this ourselves)
 
-`public/.well-known/assetlinks.json` is already in the repo with the right
-package name (`de.ranglapunjabrestaurant.app`) and a placeholder fingerprint. To
-activate it:
-
-1. Get the SHA-256 of the signing key the installed app is actually built
-   with. For an EAS-managed keystore:
-
-   ```
-   cd mobile && eas credentials
-   # → Android → production → Keystore → "Download"/"View" the
-   #   SHA-256 Certificate Fingerprint
-   ```
-
-   If the app ships through Google Play with Play App Signing, use the
-   fingerprint Play shows under **Release → Setup → App signing →
-   App signing key certificate** — that is the key users' devices verify,
-   and the upload key will NOT match.
-
-2. Paste it into `sha256_cert_fingerprints`, replacing
-   `REPLACE_WITH_EAS_UPLOAD_KEY_SHA256`. Format is upper-case hex pairs
-   separated by colons (`AB:CD:…`).
+`public/.well-known/assetlinks.json` is live for Maaji (2026-11-28): package
+`de.maajirestaurant.app` with the fingerprints Play Console listed under
+**Deep links → maaji-freiburg.com → Fix domain issues** (Google's app
+signing key and its other Play-served certificates), plus our upload key
+(`51:B7:84:DE…0E:3F`) so a locally installed release build verifies too.
+If Play ever reports the domain as failed again, copy its suggested JSON
+from that page — never reuse another restaurant's file.
 
 3. Deploy, then confirm the file is served from the site root as
    `application/json` over HTTPS with **no redirect**:
@@ -726,8 +712,8 @@ activate it:
    Google's verifier follows no redirects and accepts no 3xx.
 
 4. Verify on a device: `adb shell pm verify-app-links --re-verify
-   de.ranglapunjabrestaurant.app`, then
-   `adb shell pm get-app-links de.ranglapunjabrestaurant.app` — the domain must
+   de.maajirestaurant.app`, then
+   `adb shell pm get-app-links de.maajirestaurant.app` — the domain must
    read `verified`.
 
 Until step 2 is done the file is inert: Android simply fails verification
